@@ -16,7 +16,7 @@ public static class GenMath
 
     public static bool IsZoneFree(Collider2D zoneA, LayerMask coreLayer)
     {
-        if (zoneA == null) return true; // Якщо це просто земля без Zone A
+        if (zoneA == null) return true; // пїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ Zone A
 
         Physics2D.SyncTransforms();
         ContactFilter2D filter = new ContactFilter2D();
@@ -24,11 +24,11 @@ public static class GenMath
         filter.useLayerMask = true;
 
         List<Collider2D> results = new List<Collider2D>();
-        zoneA.OverlapCollider(filter, results);
+        zoneA.Overlap(filter, results);
 
         foreach (var col in results)
         {
-            if (col != zoneA) return false; // Знайшли перетин з чужим ядром
+            if (col != zoneA) return false; // пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
         }
         return true;
     }

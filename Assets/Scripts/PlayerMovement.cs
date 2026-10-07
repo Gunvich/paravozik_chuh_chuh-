@@ -39,7 +39,7 @@ public class PlayerMovement : MonoBehaviour
         }
     }
 
-    void Update()
+    void FixedUpdate()
     {
         Keyboard keyboard = Keyboard.current;
         if (keyboard == null) return;

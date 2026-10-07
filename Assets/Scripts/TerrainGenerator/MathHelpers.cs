@@ -17,7 +17,7 @@ public static class MathHelpers
         ContactFilter2D filter = new ContactFilter2D { useLayerMask = true, layerMask = zoneAMask, useTriggers = true };
         List<Collider2D> results = new List<Collider2D>();
 
-        zoneA.OverlapCollider(filter, results);
+        zoneA.Overlap(filter, results);
         foreach (var col in results) if (col != zoneA) return false;
 
         return true;
