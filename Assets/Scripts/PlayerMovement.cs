@@ -1,10 +1,11 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.InputSystem;
 
 [RequireComponent(typeof(CharacterController))]
 public class PlayerMovement : MonoBehaviour
 {
     private CharacterController controller;
+    private TriggerLocalSpace localSpace;
     private Vector3 playerVelocity;
     private bool groundedPlayer;
 
@@ -17,41 +18,39 @@ public class PlayerMovement : MonoBehaviour
     [Header("Ссылки")]
     [SerializeField] private Transform playerCamera;
 
-    [Header("Анимация (для будущего подключения)")]
+    [Header("Анимация")]
     [SerializeField] private Animator animator;
 
     private float coyoteTimeCounter;
     [SerializeField] private float coyoteTime = 0.15f;
 
-    void Start()
+    void Awake()
     {
         controller = GetComponent<CharacterController>();
-
-        if (animator == null)
-        {
-            animator = GetComponent<Animator>();
-        }
-
-        
-        if (playerCamera == null && Camera.main != null)
-        {
-            playerCamera = Camera.main.transform;
-        }
+        localSpace = GetComponent<TriggerLocalSpace>();
     }
 
-    void FixedUpdate()
+    void Start()
+    {
+        if (animator == null)
+            animator = GetComponent<Animator>();
+
+        if (playerCamera == null && Camera.main != null)
+            playerCamera = Camera.main.transform;
+    }
+
+    private void Update()
     {
         Keyboard keyboard = Keyboard.current;
         if (keyboard == null) return;
 
-        
         groundedPlayer = controller.isGrounded;
         if (groundedPlayer)
         {
             coyoteTimeCounter = coyoteTime;
-            if (playerVelocity.y < 0)
+            if (playerVelocity.y < 0f)
             {
-                playerVelocity.y = -2f; // Прижим к полу
+                playerVelocity.y = -2f; // Притискання до поверхні
             }
         }
         else
@@ -59,7 +58,7 @@ public class PlayerMovement : MonoBehaviour
             coyoteTimeCounter -= Time.deltaTime;
         }
 
-        // Считываем ввод (WASD / Стрелочки)
+        // Ввід
         float moveX = 0f;
         float moveZ = 0f;
 
@@ -68,26 +67,20 @@ public class PlayerMovement : MonoBehaviour
         if (keyboard.wKey.isPressed || keyboard.upArrowKey.isPressed) moveZ += 1f;
         if (keyboard.sKey.isPressed || keyboard.downArrowKey.isPressed) moveZ -= 1f;
 
-        // Вычисляем направление движения относительно КАМЕРЫ
+        // Напрямок камери
         Vector3 forward = playerCamera.forward;
         Vector3 right = playerCamera.right;
-
-        // Убираем составляющую по Y, чтобы игрок не летал вверх/вниз при взгляде камеры в небо/пол
         forward.y = 0f;
         right.y = 0f;
         forward.Normalize();
         right.Normalize();
 
-        Vector3 move = (forward * moveZ + right * moveX).normalized;
+        Vector3 moveInput = (forward * moveZ + right * moveX).normalized;
 
-        // Бег (Shift)
         bool isRunning = keyboard.leftShiftKey.isPressed;
         float currentSpeed = isRunning ? runSpeed : walkSpeed;
 
-        // Движение по горизонтали
-        controller.Move(move * currentSpeed * Time.deltaTime);
-
-        // Логика прыжка
+        // Стрибок
         if (keyboard.spaceKey.wasPressedThisFrame && coyoteTimeCounter > 0f)
         {
             playerVelocity.y = Mathf.Sqrt(jumpHeight * -2.0f * gravityValue);
@@ -95,24 +88,17 @@ public class PlayerMovement : MonoBehaviour
             TriggerJumpAnimation();
         }
 
-        // Гравитация
+        // Гравітація
         playerVelocity.y += gravityValue * Time.deltaTime;
-        controller.Move(playerVelocity * Time.deltaTime);
 
-        // Анимации
-        UpdateAnimations(move.magnitude, isRunning);
+        Vector3 finalDisplacement = (moveInput * currentSpeed * Time.deltaTime)
+                                  + (playerVelocity * Time.deltaTime);
+
+        controller.Move(finalDisplacement);
+
+        UpdateAnimations(moveInput.magnitude, isRunning);
     }
 
-    private void UpdateAnimations(float moveMagnitude, bool isRunning)
-    {
-        if (animator != null)
-        {
-            // Здесь будет логика параметров Animator (например, передача скорости)
-        }
-    }
-
-    private void TriggerJumpAnimation()
-    {
-        Debug.Log("Прыжок!");
-    }
+    private void UpdateAnimations(float moveMagnitude, bool isRunning) { }
+    private void TriggerJumpAnimation() => Debug.Log("Прыжок!");
 }

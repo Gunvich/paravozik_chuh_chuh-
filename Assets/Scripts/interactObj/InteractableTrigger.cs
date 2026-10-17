@@ -156,6 +156,7 @@ public class InteractableTrigger : MonoBehaviour, IInteractable
 
     private void Start()
     {
+        if (targetRotator == null) return;
         targetRotator.SetTargetState(
         positionSwitch[currentSwitch].Angle,
         positionSwitch[currentSwitch].Move

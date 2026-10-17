@@ -1,4 +1,4 @@
-using UnityEngine;
+п»їusing UnityEngine;
 
 [RequireComponent(typeof(Collider))]
 public class TrainCoupler : MonoBehaviour
@@ -7,7 +7,7 @@ public class TrainCoupler : MonoBehaviour
 
     [SerializeField] private CouplerType type;
     [SerializeField] private TrainCar ownerCar;
-    [SerializeField] private float couplerOffset = 1.2f; // Довжина самої зчіпки
+    [SerializeField] private float couplerOffset = 1.2f; // Р”РѕРІР¶РёРЅР° СЃР°РјРѕС— Р·С‡С–РїРєРё
 
     public CouplerType Type => type;
     public TrainCar OwnerCar => ownerCar;
@@ -18,33 +18,33 @@ public class TrainCoupler : MonoBehaviour
     private void Awake()
     {
         var col = GetComponent<Collider>();
-        col.isTrigger = true; // Обов'язково тригер!
+        col.isTrigger = true; // РћР±РѕРІ'СЏР·РєРѕРІРѕ С‚СЂРёРіРµСЂ!
 
         if (ownerCar == null)
             ownerCar = GetComponentInParent<TrainCar>();
     }
 
-    private void OnTriggerEnter(Collider other)
-    {
-        // Перевіряємо, чи зіткнулися з іншою зчіпкою
-        if (!other.TryGetComponent<TrainCoupler>(out var otherCoupler)) return;
+    //private void OnTriggerEnter(Collider other)
+    //{
+    //    // РџРµСЂРµРІС–СЂСЏС”РјРѕ, С‡Рё Р·С–С‚РєРЅСѓР»РёСЃСЏ Р· С–РЅС€РѕСЋ Р·С‡С–РїРєРѕСЋ
+    //    if (!other.TryGetComponent<TrainCoupler>(out var otherCoupler)) return;
 
-        // Не стикуємося самі з собою або якщо вже підключені
-        if (otherCoupler.OwnerCar == ownerCar || IsConnected || otherCoupler.IsConnected) return;
+    //    // РќРµ СЃС‚РёРєСѓС”РјРѕСЃСЏ СЃР°РјС– Р· СЃРѕР±РѕСЋ Р°Р±Рѕ СЏРєС‰Рѕ РІР¶Рµ РїС–РґРєР»СЋС‡РµРЅС–
+    //    if (otherCoupler.OwnerCar == ownerCar || IsConnected || otherCoupler.IsConnected) return;
 
-        // Стикуємося тільки тоді, коли зад стикається з передом (Rear + Front)
-        if (this.type == CouplerType.Rear && otherCoupler.type == CouplerType.Front)
-        {
-            // Знаходимо склад локомотива
-            var comp = GetComponentInParent<TrainComposition>();
-            if (comp != null)
-            {
-                float totalCouplerDistance = this.couplerOffset + otherCoupler.couplerOffset;
-                comp.AttachCarAtEnd(otherCoupler.OwnerCar, totalCouplerDistance);
+    //    // РЎС‚РёРєСѓС”РјРѕСЃСЏ С‚С–Р»СЊРєРё С‚РѕРґС–, РєРѕР»Рё Р·Р°Рґ СЃС‚РёРєР°С”С‚СЊСЃСЏ Р· РїРµСЂРµРґРѕРј (Rear + Front)
+    //    if (this.type == CouplerType.Rear && otherCoupler.type == CouplerType.Front)
+    //    {
+    //        // Р—РЅР°С…РѕРґРёРјРѕ СЃРєР»Р°Рґ Р»РѕРєРѕРјРѕС‚РёРІР°
+    //        var comp = GetComponentInParent<TrainComposition>();
+    //        if (comp != null)
+    //        {
+    //            float totalCouplerDistance = this.couplerOffset + otherCoupler.couplerOffset;
+    //            comp.AttachCarAtEnd(otherCoupler.OwnerCar, totalCouplerDistance);
 
-                this.IsConnected = true;
-                otherCoupler.IsConnected = true;
-            }
-        }
-    }
+    //            this.IsConnected = true;
+    //            otherCoupler.IsConnected = true;
+    //        }
+    //    }
+    //}
 }

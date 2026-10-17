@@ -5,6 +5,7 @@ TagManager:
   serializedVersion: 3
   tags:
   - LocalGrid
+  - TerrainChunk
   layers:
   - Default
   - TransparentFX
@@ -12,8 +13,8 @@ TagManager:
   - Interact
   - Water
   - UI
-  - 
-  - 
+  - ZoneA
+  - ZoneB
   - 
   - 
   - 

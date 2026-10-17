@@ -1,4 +1,4 @@
-using UnityEngine;
+п»їusing UnityEngine;
 
 [RequireComponent(typeof(BoxCollider))]
 public class TrainCarVolume : MonoBehaviour
@@ -30,11 +30,11 @@ public class TrainCarVolume : MonoBehaviour
         }
     }
 
-    private void FixedUpdate()
+    private void Update()
     {
         if (carRigidbody == null) return;
 
-        // Точне зміщення вагона за поточний FixedUpdate
+        // РўРѕС‡РЅРµ Р·РјС–С‰РµРЅРЅСЏ РІР°РіРѕРЅР° Р·Р° РїРѕС‚РѕС‡РЅРёР№ FixedUpdate
         FrameDeltaPosition = carRigidbody.position - _lastPosition;
         FrameDeltaRotation = carRigidbody.rotation * Quaternion.Inverse(_lastRotation);
 

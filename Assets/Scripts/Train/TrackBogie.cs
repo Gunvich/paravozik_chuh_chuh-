@@ -1,8 +1,8 @@
-using UnityEngine;
+п»їusing UnityEngine;
 
 public class TrackBogie : MonoBehaviour
 {
-    [Header("Поточний стан на колії")]
+    [Header("РџРѕС‚РѕС‡РЅРёР№ СЃС‚Р°РЅ РЅР° РєРѕР»С–С—")]
     public TrackSegment currentSegment;
     public float distanceOnSegment;
 
@@ -16,7 +16,7 @@ public class TrackBogie : MonoBehaviour
 
         distanceOnSegment += deltaDistance;
 
-        // Рух уперед: якщо виїхали за межі сегмента
+        // Р СѓС… СѓРїРµСЂРµРґ: СЏРєС‰Рѕ РІРёС—С…Р°Р»Рё Р·Р° РјРµР¶С– СЃРµРіРјРµРЅС‚Р°
         while (distanceOnSegment > currentSegment.Length)
         {
             float overflow = distanceOnSegment - currentSegment.Length;
@@ -29,13 +29,13 @@ public class TrackBogie : MonoBehaviour
             }
             else
             {
-                // Кінець колії (тупик)
+                // РљС–РЅРµС†СЊ РєРѕР»С–С— (С‚СѓРїРёРє)
                 distanceOnSegment = currentSegment.Length;
                 break;
             }
         }
 
-        // Рух назад (реверс): якщо виїхали за початок сегмента
+        // Р СѓС… РЅР°Р·Р°Рґ (СЂРµРІРµСЂСЃ): СЏРєС‰Рѕ РІРёС—С…Р°Р»Рё Р·Р° РїРѕС‡Р°С‚РѕРє СЃРµРіРјРµРЅС‚Р°
         while (distanceOnSegment < 0f)
         {
             float underflow = -distanceOnSegment;
@@ -48,7 +48,7 @@ public class TrackBogie : MonoBehaviour
             }
             else
             {
-                // Початок колії (тупик)
+                // РџРѕС‡Р°С‚РѕРє РєРѕР»С–С— (С‚СѓРїРёРє)
                 distanceOnSegment = 0f;
                 break;
             }

@@ -1,18 +1,17 @@
 using System;
 using UnityEngine;
-using static UnityEngine.GraphicsBuffer;
 
 [RequireComponent(typeof(Rigidbody))]
 public class TrainCar : MonoBehaviour
 {
-    [Header("Візки вагона")]
+    [Header("Р’С–Р·РєРё")]
     [SerializeField] private TrackBogie frontBogie;
     [SerializeField] private TrackBogie rearBogie;
 
-    [Header("Геометрія та фізика")]
+    [Header("РџР°СЂР°РјРµС‚СЂРё РІР°РіРѕРЅР°")]
     private float wheelbase = 12f;
-    [SerializeField] private float mass = 15000f; // Маса вагона в кг (15 тонн)
-    [SerializeField] private float rollingFriction = 0.8f; // Тертя кочення для відчепленого вагона
+    [SerializeField] private float mass = 15000f; // РњР°СЃР° Сѓ РєРі (15 С‚РѕРЅРЅ)
+    [SerializeField] private float rollingFriction = 0.8f; // РћРїС–СЂ РєРѕС‡РµРЅРЅСЋ Сѓ Рј/СЃ^2
 
     public TrackBogie FrontBogie => frontBogie;
     public TrackBogie RearBogie => rearBogie;
@@ -20,16 +19,32 @@ public class TrainCar : MonoBehaviour
     public float Mass => mass;
 
     /// <summary>
-    /// Вільна швидкість вагона (коли він відчеплений і котиться сам)
+    /// Р›РѕРєР°Р»СЊРЅР° С€РІРёРґРєС–СЃС‚СЊ (РґР»СЏ РІС–РґС‡РµРїР»РµРЅРѕРіРѕ РІР°РіРѕРЅР°)
     /// </summary>
     public float CurrentVelocity { get; set; }
 
     /// <summary>
-    /// Чи знаходиться вагон у складі активного потяга під тягою
+    /// Р§Рё Р·РЅР°С…РѕРґРёС‚СЊСЃСЏ Сѓ СЃРєР»Р°РґС– Р°РєС‚РёРІРЅРѕРіРѕ С‚СЏРіР°С‡Р°
     /// </summary>
-    public bool IsInActiveTrain { get; set; }
+    public bool IsInActiveTrain
+    {
+        get
+        {
+            if (_isInActiveTrain) return true;
+            var comp = GetComponentInParent<TrainComposition>();
+            if (comp != null)
+            {
+                var engine = comp.GetComponentInChildren<TrainEngine>();
+                if (engine != null && engine.isActiveAndEnabled)
+                    return true;
+            }
+            return false;
+        }
+        set => _isInActiveTrain = value;
+    }
+    private bool _isInActiveTrain;
 
-    public event Action<float> OnCarImpact; // Подія удару (передає силу удару)
+    public event Action<float> OnCarImpact; // РџРѕРґС–СЏ СѓРґР°СЂСѓ (РїРµСЂРµРґР°С” СЃРёР»Сѓ СѓРґР°СЂСѓ)
 
     private Rigidbody _rb;
 
@@ -39,20 +54,20 @@ public class TrainCar : MonoBehaviour
 
         _rb = GetComponent<Rigidbody>();
         _rb.isKinematic = true;
-
         _rb.interpolation = RigidbodyInterpolation.None;
     }
 
-    private void FixedUpdate()
+    private void Update()
     {
-        // Якщо вагон відчеплений і отримав поштовх від удару — він котиться сам
+        // РџРѕС‚СЏРі РЅРµ РІ Р°РєС‚РёРІРЅРѕРјСѓ СЃРєР»Р°РґС– С– РјР°С” С€РІРёРґРєС–СЃС‚СЊ - РІС–Р»СЊРЅРµ РєРѕС‡РµРЅРЅСЏ
         if (!IsInActiveTrain && Mathf.Abs(CurrentVelocity) > 0.01f)
         {
-            float deltaDistance = CurrentVelocity * Time.fixedDeltaTime;
+            float deltaDistance = CurrentVelocity * Time.deltaTime;
             MoveCar(deltaDistance);
 
-            // Плавне сповільнення від тертя рейок
-            CurrentVelocity = Mathf.MoveTowards(CurrentVelocity, 0f, rollingFriction * Time.fixedDeltaTime);
+            // РЈРїРѕРІС–Р»СЊРЅРµРЅРЅСЏ РІС–Рґ С‚РµСЂС‚СЏ
+            CurrentVelocity = Mathf.MoveTowards(CurrentVelocity, 0f, rollingFriction * Time.deltaTime);
+            Physics.SyncTransforms();
         }
     }
 
@@ -90,12 +105,65 @@ public class TrainCar : MonoBehaviour
     }
 
     /// <summary>
-    /// Отримання імпульсу від зіткнення
+    /// РџРѕРІРµСЂС‚Р°С” РґС–СЋС‡Сѓ С€РІРёРґРєС–СЃС‚СЊ РІР°РіРѕРЅР° (Р· СѓСЂР°С…СѓРІР°РЅРЅСЏРј TrainEngine, СЏРєС‰Рѕ РІР°РіРѕРЅ Сѓ СЃРєР»Р°РґС–)
+    /// </summary>
+    public float GetEffectiveVelocity()
+    {
+        var comp = GetComponentInParent<TrainComposition>();
+        if (comp != null)
+        {
+            var engine = comp.GetComponentInChildren<TrainEngine>();
+            if (engine != null && engine.isActiveAndEnabled)
+                return engine.CurrentSpeed;
+        }
+        return CurrentVelocity;
+    }
+
+    /// <summary>
+    /// РџСЂРёР№РЅСЏС‚Рё С–РјРїСѓР»СЊСЃ РІС–Рґ Р·С–С‚РєРЅРµРЅРЅСЏ
     /// </summary>
     public void ApplyImpact(float impulseVelocity, float impactForce)
     {
-        CurrentVelocity = impulseVelocity;
+        var comp = GetComponentInParent<TrainComposition>();
+        if (comp != null)
+        {
+            var engine = comp.GetComponentInChildren<TrainEngine>();
+            if (engine != null && engine.isActiveAndEnabled)
+            {
+                engine.SetSpeed(impulseVelocity);
+            }
+            else
+            {
+                // Р”Р»СЏ РІС–РґС‡РµРїР»РµРЅРѕРіРѕ СЃРєР»Р°РґСѓ РїРµСЂРµРґР°С”РјРѕ С€РІРёРґРєС–СЃС‚СЊ СѓСЃС–Рј РІР°РіРѕРЅР°Рј
+                foreach (var car in comp.Cars)
+                {
+                    if (car != null)
+                        car.CurrentVelocity = impulseVelocity;
+                }
+            }
+        }
+        else
+        {
+            CurrentVelocity = impulseVelocity;
+        }
+
         OnCarImpact?.Invoke(impactForce);
+    }
+
+    /// <summary>
+    /// Р‘Р»РѕРєСѓС” СЂСѓС… РїРѕС‚СЏРіР° Сѓ РЅР°РїСЂСЏРјРєСѓ Р·С–С‚РєРЅРµРЅРЅСЏ, РїРѕРєРё РіСЂР°РІРµС†СЊ РЅРµ РїРѕС—РґРµ РІ С–РЅС€РёР№ Р±С–Рє
+    /// </summary>
+    public void BlockDirection(bool blockForward)
+    {
+        var comp = GetComponentInParent<TrainComposition>();
+        if (comp != null)
+        {
+            var engine = comp.GetComponentInChildren<TrainEngine>();
+            if (engine != null)
+            {
+                engine.BlockDirection(blockForward);
+            }
+        }
     }
 
     private void UpdateCarPositionAndRotation(bool teleport)
@@ -109,15 +177,9 @@ public class TrainCar : MonoBehaviour
 
         Quaternion carRotation = Quaternion.LookRotation(carForward, averageUp);
 
-        if (teleport)
-        {
-            _rb.position = carCenter;
-            _rb.rotation = carRotation;
-        }
-        else
-        {
-            _rb.MovePosition(carCenter);
-            _rb.MoveRotation(carRotation);
-        }
+        _rb.position = carCenter;
+        _rb.rotation = carRotation;
+        transform.position = carCenter;
+        transform.rotation = carRotation;
     }
 }

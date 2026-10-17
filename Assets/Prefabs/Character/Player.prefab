@@ -152,6 +152,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::MouseLook
   mouseSensitivity: 15
   playerBody: {fileID: 1098846886808073269}
+  isRotation: 1
 --- !u!1 &3383391703375685310
 GameObject:
   m_ObjectHideFlags: 0
@@ -165,8 +166,8 @@ GameObject:
   - component: {fileID: 2837654589870361493}
   - component: {fileID: 1273242124635812148}
   - component: {fileID: 3721020052078871907}
-  - component: {fileID: 869915536117366197}
   - component: {fileID: 3354816044569231532}
+  - component: {fileID: 869915536117366197}
   m_Layer: 0
   m_Name: Player
   m_TagString: Player
@@ -268,8 +269,8 @@ CharacterController:
   m_Height: 1.8
   m_Radius: 0.25
   m_SlopeLimit: 45
-  m_StepOffset: 0.3
-  m_SkinWidth: 0.08
+  m_StepOffset: 0.45
+  m_SkinWidth: 0.025
   m_MinMoveDistance: 0.001
   m_Center: {x: 0, y: 0, z: 0}
 --- !u!114 &3721020052078871907
@@ -291,19 +292,6 @@ MonoBehaviour:
   playerCamera: {fileID: 6984756852053261604}
   animator: {fileID: 0}
   coyoteTime: 0.15
---- !u!114 &869915536117366197
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3383391703375685310}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: bd646de7e717b5e4491297e55646bff8, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TriggerLocalSpace
-  localGridTag: LocalGrid
 --- !u!114 &3354816044569231532
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -322,3 +310,17 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 8
   interactTextInfo: {fileID: 0}
+--- !u!114 &869915536117366197
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3383391703375685310}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bd646de7e717b5e4491297e55646bff8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TriggerLocalSpace
+  localGridTag: LocalGrid
+  detachDelay: 0.05

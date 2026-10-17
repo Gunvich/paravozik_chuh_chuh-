@@ -1,28 +1,31 @@
-using System.Collections.Generic;
+п»їusing System.Collections.Generic;
 using UnityEngine;
 
 public class ChunkDatabase : MonoBehaviour
 {
     public List<ChunkData> prefabs = new List<ChunkData>();
 
+    // Cached list to avoid GC allocation on each call
+    private List<ChunkData> validPrefabsCache = new List<ChunkData>();
+
     public ChunkData GetRandomPrefab(ChunkCategory category, BiomeZone biome = BiomeZone.Any)
     {
-        List<ChunkData> validPrefabs = new List<ChunkData>();
+        validPrefabsCache.Clear();
 
         foreach (var prefab in prefabs)
         {
             if (prefab.category == category && (biome == BiomeZone.Any || prefab.biome == biome))
             {
-                validPrefabs.Add(prefab);
+                validPrefabsCache.Add(prefab);
             }
         }
 
-        if (validPrefabs.Count > 0)
+        if (validPrefabsCache.Count > 0)
         {
-            return validPrefabs[Random.Range(0, validPrefabs.Count)];
+            return validPrefabsCache[Random.Range(0, validPrefabsCache.Count)];
         }
 
-        Debug.LogError($"Не знайдено префаба для категорії {category} та біома {biome}");
+        Debug.LogError($"No prefabs found for category {category}, biome {biome}");
         return null;
     }
 }

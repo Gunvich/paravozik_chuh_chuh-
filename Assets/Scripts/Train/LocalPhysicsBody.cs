@@ -1,114 +1,124 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Events;
 
 [RequireComponent(typeof(CharacterController))]
 public class TriggerLocalSpace : MonoBehaviour
 {
-    private CharacterController _controller;
-
     [Header("Налаштування локальної фізики")]
     public string localGridTag = "LocalGrid";
 
-    private List<Transform> _activeGrids = new List<Transform>();
+    [Tooltip("Затримка перед відв'язкою у секундах. Рятує від мікро-проміжків між тригерами на швидкості.")]
+    public float detachDelay = 0.5f;
+
+    private readonly List<Collider> _activeColliders = new List<Collider>();
     private Transform _currentGrid;
+    private float _detachTimer = 0f;
 
-    private Transform _anchor;
+    // Зберігаємо початкового батька на випадок, якщо гравець стартує в якомусь контейнері
+    private Transform _originalParent;
 
-    // Зберігаємо координати якоря з попереднього кадру
-    private Vector3 _previousAnchorPosition;
-    private Quaternion _previousAnchorRotation;
+    public UnityEvent Exit;
 
-    void Start()
+    void Awake()
     {
-        _controller = GetComponent<CharacterController>();
-        _anchor = new GameObject("PlayerLocalAnchor").transform;
+        _originalParent = transform.parent;
     }
 
     void OnTriggerEnter(Collider other)
     {
-        if (other.CompareTag(localGridTag))
+        if (other.CompareTag(localGridTag) && !_activeColliders.Contains(other))
         {
-            if (!_activeGrids.Contains(other.transform))
-            {
-                _activeGrids.Add(other.transform);
-                UpdateCurrentGrid();
-            }
+            _activeColliders.Add(other);
+            ExpandTriggerIfNeeded(other);
         }
+        Exit.Invoke();
     }
 
     void OnTriggerExit(Collider other)
     {
         if (other.CompareTag(localGridTag))
         {
-            if (_activeGrids.Contains(other.transform))
-            {
-                _activeGrids.Remove(other.transform);
-                UpdateCurrentGrid();
-            }
+            _activeColliders.Remove(other);
+        }
+        Exit.Invoke();
+    }
+
+    private void ExpandTriggerIfNeeded(Collider col)
+    {
+        if (col is BoxCollider box && !col.gameObject.name.EndsWith("_Padded"))
+        {
+            box.size = new Vector3(box.size.x + 1.0f, box.size.y + 1.0f, box.size.z + 2.0f);
+            col.gameObject.name += "_Padded";
         }
     }
 
-    private void UpdateCurrentGrid()
+    private Transform GetGridTransform(Collider col)
     {
-        if (_activeGrids.Count > 0)
-        {
-            Transform newGrid = _activeGrids[_activeGrids.Count - 1];
+        if (col == null) return null;
+        if (col.attachedRigidbody != null) return col.attachedRigidbody.transform;
+        var trainCar = col.GetComponentInParent<TrainCar>(); // Якщо TrainCar існує у вашому проєкті
+        if (trainCar != null) return trainCar.transform;
+        return col.transform.root;
+    }
 
-            if (_currentGrid != newGrid)
+    void Update()
+    {
+        // 1. Очищення невалідних колайдерів
+        _activeColliders.RemoveAll(c => c == null || !c.gameObject.activeInHierarchy);
+
+        // 2. Стабільний вибір цільового гріда
+        Transform desiredGrid = null;
+
+        if (_currentGrid != null)
+        {
+            foreach (var col in _activeColliders)
             {
-                _currentGrid = newGrid;
-                _anchor.SetParent(_currentGrid, true);
-                SyncAnchorWithPlayer();
+                if (GetGridTransform(col) == _currentGrid)
+                {
+                    desiredGrid = _currentGrid;
+                    _detachTimer = 0f;
+                    break;
+                }
             }
+        }
+
+        // Якщо ми ще не на гріді або вийшли з нього
+        if (desiredGrid == null && _activeColliders.Count > 0)
+        {
+            desiredGrid = GetGridTransform(_activeColliders[_activeColliders.Count - 1]);
+            _detachTimer = 0f;
+        }
+        else if (desiredGrid == null && _currentGrid != null)
+        {
+            _detachTimer += Time.deltaTime;
+            if (_detachTimer < detachDelay)
+            {
+                desiredGrid = _currentGrid;
+            }
+        }
+
+        // 3. Зміна гріда при ДІЙСНІЙ зміні вагона
+        if (_currentGrid != desiredGrid)
+        {
+            ChangeGrid(desiredGrid);
+        }
+    }
+
+    private void ChangeGrid(Transform newGrid)
+    {
+        _currentGrid = newGrid;
+
+        if (_currentGrid != null)
+        {
+            // Робимо гравця дочірнім об'єктом платформи/вагона. 
+            // true - означає, що гравець збереже свою глобальну позицію при зміні батька.
+            transform.SetParent(_currentGrid, true);
         }
         else
         {
-            _currentGrid = null;
-            _anchor.SetParent(null);
+            // Повертаємо гравця до початкового стану (зазвичай null - тобто в корінь сцени)
+            transform.SetParent(_originalParent, true);
         }
-    }
-
-    void LateUpdate()
-    {
-        if (_currentGrid != null)
-        {
-            ApplyLocalPhysics();
-        }
-    }
-
-    private void ApplyLocalPhysics()
-    {
-        // 1. Рахуємо рух ПЛАТФОРМИ (різниця між поточною та минулою позицією якоря)
-        Vector3 platformPositionDelta = _anchor.position - _previousAnchorPosition;
-        Quaternion platformRotationDelta = _anchor.rotation * Quaternion.Inverse(_previousAnchorRotation);
-
-        // 2. Додаємо рух платформи до персонажа
-        if (platformPositionDelta.magnitude > 0.0001f)
-        {
-            _controller.Move(platformPositionDelta);
-        }
-
-        // 3. Застосовуємо обертання платформи
-        if (platformRotationDelta != Quaternion.identity)
-        {
-            Vector3 eulerDelta = platformRotationDelta.eulerAngles;
-            float yRot = eulerDelta.y;
-            if (yRot > 180) yRot -= 360;
-
-            transform.Rotate(0, yRot, 0);
-        }
-
-        // 4. Синхронізуємо якір з НОВОЮ позицією гравця (разом зі стрибком) для наступного кадру
-        SyncAnchorWithPlayer();
-    }
-
-    private void SyncAnchorWithPlayer()
-    {
-        _anchor.position = transform.position;
-        _anchor.rotation = transform.rotation;
-
-        // Оновлюємо координати для розрахунків у наступному кадрі
-        _previousAnchorPosition = _anchor.position;
-        _previousAnchorRotation = _anchor.rotation;
     }
 }

@@ -1,77 +1,105 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
 public class ForestWorldGenerator : MonoBehaviour
 {
-    [Header("Íàëàøòóâàííÿ")]
-    [Tooltip("Ãîëîâíèé êîğäîí ñâ³òó. Çà éîãî ìåæ³ ãåíåğàö³ÿ íå âèéäå.")]
-    public PolygonCollider2D worldBoundary;
+    [Header("Settings")]
+    [Tooltip("World boundary in XZ â€” Zone3D component.")]
+    public Zone3D worldBoundaryZone;
 
-    public ChunkData bakedForestHub; // Íàø "çàïå÷åíèé" ñòàğòîâèé øìàòîê
-    public LayerMask zoneALayer;
+    public ChunkData bakedForestHub;
     public int maxTrails = 40;
 
-    [Header("Ïğåôàáè (Ñïğîùåíà áàçà)")]
+    [Header("Prefabs")]
     public List<ChunkData> allPrefabs;
+
+    [Header("Async Generation")]
+    [Tooltip("Chunks to spawn per frame before yield")]
+    public int chunksPerFrame = 10;
+
+    [Header("Connector Snapping")]
+    [Tooltip("Enable face-to-face edge snapping instead of aura-based random placement.")]
+    public bool useConnectorSnapping = true;
+    public float connectorSearchRadius = 25f;
 
     private Queue<ChunkData> openTrails = new Queue<ChunkData>();
     private List<ChunkData> generatedChunks = new List<ChunkData>();
+    private List<Zone3D> registeredCores = new List<Zone3D>();
+    private List<ChunkConnector> allFreeConnectors = new List<ChunkConnector>();
     private int currentTrailCount = 0;
+
+    // Cached list for prefab filtering (reduces GC)
+    private List<ChunkData> filteredPrefabsCache = new List<ChunkData>();
+
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private void Start()
     {
-        StartForestGeneration();
+        StartCoroutine(StartForestGenerationAsync());
     }
 
-    public void StartForestGeneration()
+    public IEnumerator StartForestGenerationAsync()
     {
-        // 1. Ñòàâèìî Çàïå÷åíèé Õàá
+        // 1. Place baked hub
         ChunkData hub = Instantiate(bakedForestHub, Vector3.zero, Quaternion.identity);
-        generatedChunks.Add(hub);
-
-        // Õàá ìàº ïğàâèëà äëÿ ñòåæîê íà ñâî¿õ êğàÿõ
+        RegisterChunk(hub);
         openTrails.Enqueue(hub);
+        yield return null;
 
-        // 2. Çàïóñêàºìî ôàçó Ñòåæîê (Phase 1.5)
-        GeneratePhase1_5_Trails();
+        // 2. Trail phase
+        yield return StartCoroutine(GeneratePhase1_5_Trails());
 
-        // 3. Çàïóñêàºìî ôàçó Òî÷îê ²íòåğåñó (POI)
-        GeneratePhase2_POI();
+        // 3. POI phase
+        yield return StartCoroutine(GeneratePhase2_POI());
+
+        Debug.Log($"Forest generation complete: {currentTrailCount} trails, {generatedChunks.Count} chunks total");
     }
 
-    private void GeneratePhase1_5_Trails()
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Phase 1.5: Trails
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    private IEnumerator GeneratePhase1_5_Trails()
     {
+        int spawnedThisFrame = 0;
+
         while (openTrails.Count > 0 && currentTrailCount < maxTrails)
         {
             ChunkData currentChunk = openTrails.Dequeue();
 
             foreach (DirectionRule rule in currentChunk.rules)
             {
-                // Íàñ ö³êàâëÿòü ò³ëüêè ñòåæêè
                 if (rule.allowedCategory != ChunkCategory.Trail) continue;
+                if (Random.Range(0f, 100f) > rule.spawnProbability) continue;
 
-                // Îñê³ëüêè ñòåæêè ÍÅ îáîâ'ÿçêîâ³, ïåğåâ³ğÿºìî øàíñ
-                if (Random.Range(0f, 100f) > rule.spawnProbability)
-                {
-                    continue; // Íå ïîùàñòèëî, ñòåæêà òóò îáğèâàºòüñÿ
-                }
-
-                TrySpawnChunk(currentChunk, rule, out ChunkData newTrail);
+                ChunkData newTrail = useConnectorSnapping
+                    ? TrySpawnConnector(currentChunk, rule)
+                    : TrySpawnAura(currentChunk, rule);
 
                 if (newTrail != null)
                 {
                     openTrails.Enqueue(newTrail);
-                    generatedChunks.Add(newTrail);
                     currentTrailCount++;
+                    spawnedThisFrame++;
+
+                    if (spawnedThisFrame >= chunksPerFrame)
+                    {
+                        spawnedThisFrame = 0;
+                        yield return null;
+                    }
                 }
             }
         }
-        Debug.Log($"Ñòåæîê çãåíåğîâàíî: {currentTrailCount}");
+        Debug.Log($"Trails generated: {currentTrailCount}");
     }
 
-    private void GeneratePhase2_POI()
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Phase 2: POI
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    private IEnumerator GeneratePhase2_POI()
     {
-        // Ïğîõîäèìî ïî âñ³õ çãåíåğîâàíèõ îá'ºêòàõ (õàá, ñòåæêè)
         int initialCount = generatedChunks.Count;
         for (int i = 0; i < initialCount; i++)
         {
@@ -82,66 +110,143 @@ public class ForestWorldGenerator : MonoBehaviour
                 if (rule.allowedCategory != ChunkCategory.POI) continue;
                 if (Random.Range(0f, 100f) > rule.spawnProbability) continue;
 
-                // Øóêàºìî áóäèíîê ë³ñíèêà àáî ğó¿íè
-                TrySpawnChunk(currentChunk, rule, out ChunkData newPOI);
+                ChunkData newPOI = useConnectorSnapping
+                    ? TrySpawnConnector(currentChunk, rule)
+                    : TrySpawnAura(currentChunk, rule);
 
                 if (newPOI != null)
-                {
-                    generatedChunks.Add(newPOI);
-                    Debug.Log($"Çãåíåğîâàíî POI ó á³îì³: {newPOI.biome}");
-                }
+                    Debug.Log($"POI spawned, biome: {newPOI.biome}");
+            }
+
+            if (i % chunksPerFrame == 0 && i > 0)
+                yield return null;
+        }
+    }
+
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Connector-based snapping
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    private ChunkData TrySpawnConnector(ChunkData parent, DirectionRule rule)
+    {
+        GetFilteredPrefabs(rule);
+        if (filteredPrefabsCache.Count == 0) return null;
+
+        // Find open connector in the desired direction
+        Vector3 searchFrom = parent.transform.position +
+                             parent.transform.TransformDirection(rule.localDirection) * 2f;
+
+        ChunkConnector openConnector = GenMath.FindNearestFreeConnector(
+            allFreeConnectors, searchFrom, ConnectorType.Any, connectorSearchRadius);
+
+        if (openConnector == null) return TrySpawnAura(parent, rule); // fallback
+
+        ChunkData prefab = filteredPrefabsCache[Random.Range(0, filteredPrefabsCache.Count)];
+        if (prefab.connectors == null || prefab.connectors.Length == 0)
+            return TrySpawnAura(parent, rule);
+
+        for (int attempt = 0; attempt < 8; attempt++)
+        {
+            int idx = Random.Range(0, prefab.connectors.Length);
+            ChunkConnector inTemplate = prefab.connectors[idx];
+
+            GenMath.CalculateSnapTransform(openConnector, inTemplate,
+                out Vector3 newPos, out Quaternion newRot);
+
+            if (worldBoundaryZone != null && !worldBoundaryZone.Contains(newPos))
+                continue;
+
+            ChunkData candidate = Instantiate(prefab, newPos, newRot);
+
+            bool free = candidate.zoneA_Core == null ||
+                        GenMath.IsZone3DFree(candidate.zoneA_Core, registeredCores);
+
+            if (!free)
+            {
+                Destroy(candidate.gameObject);
+                continue;
+            }
+
+            openConnector.isOccupied = true;
+            allFreeConnectors.Remove(openConnector);
+            candidate.connectors[idx].isOccupied = true;
+
+            RegisterChunk(candidate);
+            return candidate;
+        }
+        return null;
+    }
+
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Aura-based placement (fallback / legacy)
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    private ChunkData TrySpawnAura(ChunkData parentChunk, DirectionRule rule)
+    {
+        GetFilteredPrefabs(rule);
+        if (filteredPrefabsCache.Count == 0) return null;
+
+        int maxAttempts = 15;
+        for (int i = 0; i < maxAttempts; i++)
+        {
+            Vector3 targetPos = parentChunk.GetRandomPointInAura();
+
+            if (worldBoundaryZone != null && !worldBoundaryZone.Contains(targetPos))
+                continue;
+
+            Vector3 forwardWorld = parentChunk.transform.TransformDirection(rule.localDirection);
+            if (!GenMath.IsInSector(parentChunk.transform.position, targetPos, forwardWorld, rule.minDotProduct))
+                continue;
+
+            ChunkData prefab = filteredPrefabsCache[Random.Range(0, filteredPrefabsCache.Count)];
+            Quaternion randomRot = Quaternion.Euler(0, Random.Range(0, 360), 0);
+            ChunkData candidate = Instantiate(prefab, targetPos, randomRot);
+
+            bool free = candidate.zoneA_Core == null ||
+                        GenMath.IsZone3DFree(candidate.zoneA_Core, registeredCores);
+
+            if (free)
+            {
+                RegisterChunk(candidate);
+                return candidate;
+            }
+            Destroy(candidate.gameObject);
+        }
+        return null;
+    }
+
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Helpers
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    private void GetFilteredPrefabs(DirectionRule rule)
+    {
+        filteredPrefabsCache.Clear();
+        foreach (var p in allPrefabs)
+        {
+            if (p == null) continue;
+            if (p.category == rule.allowedCategory &&
+                (rule.allowedBiome == BiomeZone.Any || p.biome == rule.allowedBiome))
+            {
+                filteredPrefabsCache.Add(p);
             }
         }
     }
 
-    private bool TrySpawnChunk(ChunkData parentChunk, DirectionRule rule, out ChunkData spawnedChunk)
+    private void RegisterChunk(ChunkData chunk)
     {
-        spawnedChunk = null;
-        int maxAttempts = 15;
+        generatedChunks.Add(chunk);
 
-        // Øóêàºìî â³äïîâ³äíèé ïğåôàá ó áàç³ (ô³ëüòğóºìî çà êàòåãîğ³ºş ÒÀ á³îìîì)
-        List<ChunkData> validPrefabs = allPrefabs.FindAll(p =>
-            p.category == rule.allowedCategory &&
-            (rule.allowedBiome == BiomeZone.Any || p.biome == rule.allowedBiome));
+        if (chunk.zoneA_Core != null)
+            registeredCores.Add(chunk.zoneA_Core);
 
-        if (validPrefabs.Count == 0) return false;
-
-        for (int i = 0; i < maxAttempts; i++)
+        if (chunk.connectors != null)
         {
-            Vector2 randomPoint2D = parentChunk.GetRandomPointInAura();
-
-            // ÍÎÂÅ: Ïåğåâ³ğÿºìî, ÷è öÿ òî÷êà íå âèë³çëà çà ìåæ³ íàøîãî ñâ³òó!
-            if (worldBoundary != null && !worldBoundary.OverlapPoint(randomPoint2D))
+            foreach (var c in chunk.connectors)
             {
-                continue; // Òî÷êà çà ìåæàìè êàğòè, ïğîïóñêàºìî öş ñïğîáó
-            }
-
-            Vector3 targetPos = new Vector3(randomPoint2D.x, 0, randomPoint2D.y);
-
-            // Ïåğåâ³ğêà ñåêòîğó
-            Vector3 forwardWorld = parentChunk.transform.TransformDirection(rule.localDirection);
-            if (!GenMath.IsInSector(parentChunk.transform.position, targetPos, forwardWorld, rule.minDotProduct))
-            {
-                continue;
-            }
-
-            ChunkData prefabToSpawn = validPrefabs[Random.Range(0, validPrefabs.Count)];
-
-            // Ñòåæêè ìîæóòü êğóòèòèñÿ ÿê çàâãîäíî
-            Quaternion randomRot = Quaternion.Euler(0, Random.Range(0, 360), 0);
-            ChunkData newChunk = Instantiate(prefabToSpawn, targetPos, randomRot);
-
-            // Ïåğåâ³ğÿºìî, ÷è º ì³ñöå äëÿ îá'ºêòà
-            if (GenMath.IsZoneFree(newChunk.zoneA_Core, zoneALayer))
-            {
-                spawnedChunk = newChunk;
-                return true;
-            }
-            else
-            {
-                Destroy(newChunk.gameObject);
+                if (c != null && !c.isOccupied)
+                    allFreeConnectors.Add(c);
             }
         }
-        return false;
     }
 }

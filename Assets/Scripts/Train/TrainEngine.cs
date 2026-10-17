@@ -1,94 +1,117 @@
+using NaughtyAttributes;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Splines;
 
+[DefaultExecutionOrder(-200)]
 public class TrainEngine : MonoBehaviour
 {
     [SerializeField] private TrainComposition trainComposition;
+#pragma warning disable CS0414 // Used by NaughtyAttributes [ShowIf] via string reflection
+    [SerializeField] private bool isEngine = false;
+#pragma warning restore CS0414
+    [ShowIf("isEngine")]
+    [SerializeField] private float maxSpeed = 30f;       // Рј/СЃ
+    [Header("РџР°СЂР°РјРµС‚СЂРё С‚СЏРіРё")]
 
-    [Header("Параметри тяги")]
-    [SerializeField] private float acceleration = 5f;    // м/с^2
-    [SerializeField] private float brakeStrength = 10f;  // м/с^2
-    [SerializeField] private float maxSpeed = 30f;       // м/с
-    [SerializeField] private float throttleInput;
+    [SerializeField] private float acceleration = 5f;    // Рј/СЃ^2
+    [SerializeField] private float brakeStrength = 10f;  // Рј/СЃ^2
+
+    private float throttleInput;
     [SerializeField] private float rollingResistance = 0.5f;
-
-    [Header("Початкова позиція")]
-    [SerializeField] private SplineContainer startingSpline;
-    [SerializeField] private TrackSegment startingSegment;
-    private float startingDistance = 20f;
 
     public bool W = true, S = true;
 
-    public float CurrentSpeed { get; private set; } // Поточна швидкість у м/с
+    public float CurrentSpeed { get; private set; } // РџРѕС‚РѕС‡РЅР° С€РІРёРґРєС–СЃС‚СЊ Сѓ Рј/СЃ
 
-    private void Start()
-    {
-        startingSegment = startingSpline.GetComponent<TrackSegment>();
-
-        var spline = startingSpline.Spline;
-        float3 localTargetPos = startingSpline.transform.InverseTransformPoint(this.transform.position);
-
-        SplineUtility.GetNearestPoint(
-            spline, localTargetPos, out float3 nearestLocalPoint, out float t, resolution: 4, iterations: 2
-        );
-
-        var nearestWorldPoint = startingSpline.transform.TransformPoint(nearestLocalPoint);
-        float splineLocalDistance = spline.ConvertIndexUnit(t, PathIndexUnit.Normalized, PathIndexUnit.Distance);
-
-        if (trainComposition != null && startingSegment != null)
-        {
-            trainComposition.InitializeTrain(startingSegment, splineLocalDistance);
-        }
-    }
+    private bool isBraking { get; set; }
 
     private void Update()
     {
         if (trainComposition == null) return;
 
-        // В Update залишаємо ТІЛЬКИ обробку інпутів (логіку W/S)
+        // Р‘Р»РѕРєСѓС”РјРѕ РіР°Р· Сѓ Р·Р°Р±РѕСЂРѕРЅРµРЅРѕРјСѓ РЅР°РїСЂСЏРјРєСѓ
         if (!W && throttleInput > 0)
             throttleInput = 0;
         else if (!S && throttleInput < 0)
             throttleInput = 0;
 
-        if (throttleInput > 0)
-            S = true;
-        else if (throttleInput < 0)
+        // Р РѕР·Р±Р»РѕРєРѕРІСѓС”РјРѕ РїСЂРѕС‚РёР»РµР¶РЅРёР№ РЅР°РїСЂСЏРјРѕРє РїСЂРё РІРёР±РѕСЂС– РіР°Р·Сѓ РІ С–РЅС€РёР№ Р±С–Рє
+        if (throttleInput < 0)
             W = true;
-    }
+        else if (throttleInput > 0)
+            S = true;
 
-    private void FixedUpdate()
-    {
-        if (trainComposition == null) return;
-
-        // 1. Розрахунок тяги перенесено сюди! І використовуємо Time.fixedDeltaTime
+        if (isBraking)
+        {
+            // РђРєС‚РёРІРЅРµ РіР°Р»СЊРјСѓРІР°РЅРЅСЏ РґРѕ РїРѕРІРЅРѕС— Р·СѓРїРёРЅРєРё
+            CurrentSpeed = Mathf.MoveTowards(CurrentSpeed, 0f, brakeStrength * Time.deltaTime);
+        }
         if (throttleInput != 0)
         {
             float targetSpeed = throttleInput * maxSpeed;
-            CurrentSpeed = Mathf.MoveTowards(CurrentSpeed, targetSpeed, acceleration * Time.fixedDeltaTime);
+            CurrentSpeed = Mathf.MoveTowards(CurrentSpeed, targetSpeed, acceleration * Time.deltaTime);
         }
         else
         {
-            CurrentSpeed = Mathf.MoveTowards(CurrentSpeed, 0f, rollingResistance * Time.fixedDeltaTime);
+            CurrentSpeed = Mathf.MoveTowards(CurrentSpeed, 0f, rollingResistance * Time.deltaTime);
         }
 
         CurrentSpeed = Mathf.Clamp(CurrentSpeed, -maxSpeed * 0.4f, maxSpeed);
 
-        // 2. Пройдений шлях за фізичний кадр
-        float deltaDistance = CurrentSpeed * Time.fixedDeltaTime;
+        float deltaDistance = CurrentSpeed * Time.deltaTime;
 
-        // 3. Передаємо зміщення вагону саме у FixedUpdate
         trainComposition.MoveTrain(deltaDistance);
+        Physics.SyncTransforms();
     }
 
     public void SetSpeed(float newSpeed)
     {
         CurrentSpeed = newSpeed;
     }
+    public void SetBrake(bool brakeState)
+    {
+        isBraking = brakeState;
+    }
+    /// <summary>
+    /// Р‘Р»РѕРєСѓС” СЂСѓС… Сѓ Р·Р°РґР°РЅРѕРјСѓ РЅР°РїСЂСЏРјРєСѓ (СѓРїРµСЂРµРґ Р°Р±Рѕ РЅР°Р·Р°Рґ) РґРѕ РјРѕРјРµРЅС‚Сѓ, РїРѕРєРё РїРѕС‚СЏРі РЅРµ РїРѕС—РґРµ РІ С–РЅС€РёР№ Р±С–Рє
+    /// </summary>
+    public void BlockDirection(bool blockForward)
+    {
+        if (blockForward)
+        {
+            W = false;
+            S = true;
+            if (CurrentSpeed > 0f) CurrentSpeed = 0f;
+            if (throttleInput > 0f) throttleInput = 0f;
+        }
+        else
+        {
+            S = false;
+            W = true;
+            if (CurrentSpeed < 0f) CurrentSpeed = 0f;
+            if (throttleInput < 0f) throttleInput = 0f;
+        }
+    }
 
     public void SetInput(float newInput)
     {
+        if (!W && newInput > 0)
+        {
+            throttleInput = 0;
+            return;
+        }
+        if (!S && newInput < 0)
+        {
+            throttleInput = 0;
+            return;
+        }
+
+        if (newInput < 0)
+            W = true;
+        else if (newInput > 0)
+            S = true;
+
         throttleInput = newInput;
     }
 }

@@ -3,22 +3,88 @@ using UnityEngine;
 
 public class ChunkData : MonoBehaviour
 {
-    [Header("�������������")]
+    [Header("Класифікація")]
     public ChunkCategory category;
     public BiomeZone biome;
 
-    [Header("Գ����� ���� (XY �������)")]
-    public PolygonCollider2D zoneA_Core; // �������� (�� ����� ����������)
-    public PolygonCollider2D zoneB_Aura; // ���� (���� ���������� �����)
+    [Header("Зони XZ (замість PolygonCollider2D)")]
+    [Tooltip("Core zone — чанк не може перетинатися з іншими core-зонами.")]
+    public Zone3D zoneA_Core;
+    [Tooltip("Aura zone — звідси беруться точки для spawning наступних чанків.")]
+    public Zone3D zoneB_Aura;
 
-    [Header("�������")]
+    [Header("Ребра (Edge-to-Edge 1-to-N)")]
+    [Tooltip("Фізичні ребра багатокутного чанку для стикування 1-to-N.")]
+    public ChunkEdge[] edges;
+
+    [Header("Конектори (Legacy edge snapping)")]
+    [Tooltip("Додай ChunkConnector-и як дочірні GameObject-и.")]
+    public ChunkConnector[] connectors;
+
+    [Header("Правила напряму")]
     public List<DirectionRule> rules = new List<DirectionRule>();
 
-    public Vector2 GetRandomPointInAura()
+    // ──────────────────────────────────────────────────────────────────────
+
+    private void Awake()
     {
-        if (zoneB_Aura == null) return new Vector2(transform.position.x, transform.position.z);
-        return MathHelpers.GetRandomPointInPolygon(zoneB_Aura);
+        EnsureEdgesCached();
     }
+
+    /// <summary>Ensures edges array is populated from children if not set in Inspector.</summary>
+    public void EnsureEdgesCached()
+    {
+        if (edges == null || edges.Length == 0)
+        {
+            edges = GetComponentsInChildren<ChunkEdge>();
+        }
+    }
+
+    /// <summary>Returns all edges that currently have at least minRequiredLength free space.</summary>
+    public List<ChunkEdge> GetFreeEdges(float minRequiredLength = 1f)
+    {
+        EnsureEdgesCached();
+        var result = new List<ChunkEdge>();
+        if (edges == null) return result;
+
+        foreach (var e in edges)
+        {
+            if (e != null && e.HasFreeSpace(minRequiredLength))
+                result.Add(e);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Повертає випадкову точку в Aura-зоні (world space XZ).
+    /// Fallback — позиція чанку.
+    /// </summary>
+    public Vector3 GetRandomPointInAura()
+    {
+        if (zoneB_Aura != null)
+            return GenMath.GetRandomPointInZone3D(zoneB_Aura);
+
+        // Fallback: random point in a small circle around the chunk
+        Vector2 rand = Random.insideUnitCircle * 5f;
+        return transform.position + new Vector3(rand.x, 0f, rand.y);
+    }
+
+    /// <summary>Returns all connectors that are currently free.</summary>
+    public List<ChunkConnector> GetFreeConnectors()
+    {
+        var result = new List<ChunkConnector>();
+        if (connectors == null) return result;
+        foreach (var c in connectors)
+        {
+            if (c != null && !c.isOccupied)
+                result.Add(c);
+        }
+        return result;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Gizmos
+    // ──────────────────────────────────────────────────────────────────────
 
     private void OnDrawGizmosSelected()
     {

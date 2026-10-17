@@ -1,14 +1,14 @@
-using UnityEngine;
+п»їusing UnityEngine;
 using UnityEngine.Splines;
 using Unity.Mathematics;
 
 [RequireComponent(typeof(SplineContainer))]
 public class TrackSegment : MonoBehaviour
 {
-    [Header("З'єднання колії")]
-    [Tooltip("Наступний сегмент (куди веде кінець цього сплайну)")]
+    [Header("Р—'С”РґРЅР°РЅРЅСЏ РєРѕР»С–С—")]
+    [Tooltip("РќР°СЃС‚СѓРїРЅРёР№ СЃРµРіРјРµРЅС‚ (РєСѓРґРё РІРµРґРµ РєС–РЅРµС†СЊ С†СЊРѕРіРѕ СЃРїР»Р°Р№РЅСѓ)")]
     public TrackSegment nextSegment;
-    [Tooltip("Попередній сегмент (звідки приходить початок цього сплайну)")]
+    [Tooltip("РџРѕРїРµСЂРµРґРЅС–Р№ СЃРµРіРјРµРЅС‚ (Р·РІС–РґРєРё РїСЂРёС…РѕРґРёС‚СЊ РїРѕС‡Р°С‚РѕРє С†СЊРѕРіРѕ СЃРїР»Р°Р№РЅСѓ)")]
     public TrackSegment previousSegment;
 
     private SplineContainer _splineContainer;
@@ -22,25 +22,25 @@ public class TrackSegment : MonoBehaviour
     }
 
     /// <summary>
-    /// Оновлює розрахункову довжину сегмента в метрах
+    /// РћРЅРѕРІР»СЋС” СЂРѕР·СЂР°С…СѓРЅРєРѕРІСѓ РґРѕРІР¶РёРЅСѓ СЃРµРіРјРµРЅС‚Р° РІ РјРµС‚СЂР°С…
     /// </summary>
     public void UpdateLength()
     {
         if (_splineContainer == null)
             _splineContainer = GetComponent<SplineContainer>();
 
-        // Рахуємо чесну фізичну довжину першого сплайну в контейнері
+        // Р Р°С…СѓС”РјРѕ С‡РµСЃРЅСѓ С„С–Р·РёС‡РЅСѓ РґРѕРІР¶РёРЅСѓ РїРµСЂС€РѕРіРѕ СЃРїР»Р°Р№РЅСѓ РІ РєРѕРЅС‚РµР№РЅРµСЂС–
         Length = _splineContainer.CalculateLength();
     }
 
     /// <summary>
-    /// Отримує світову позицію, напрямок (тангенс) та нормаль за дистанцією в метрах
+    /// РћС‚СЂРёРјСѓС” СЃРІС–С‚РѕРІСѓ РїРѕР·РёС†С–СЋ, РЅР°РїСЂСЏРјРѕРє (С‚Р°РЅРіРµРЅСЃ) С‚Р° РЅРѕСЂРјР°Р»СЊ Р·Р° РґРёСЃС‚Р°РЅС†С–С”СЋ РІ РјРµС‚СЂР°С…
     /// </summary>
     public void EvaluateAtDistance(float distance, out Vector3 worldPos, out Vector3 worldTangent, out Vector3 worldUp)
     {
         if (Length <= 0.0001f) UpdateLength();
 
-        // Перетворюємо дистанцію (метри) у нормалізований параметр t [0; 1] без спотворень
+        // РџРµСЂРµС‚РІРѕСЂСЋС”РјРѕ РґРёСЃС‚Р°РЅС†С–СЋ (РјРµС‚СЂРё) Сѓ РЅРѕСЂРјР°Р»С–Р·РѕРІР°РЅРёР№ РїР°СЂР°РјРµС‚СЂ t [0; 1] Р±РµР· СЃРїРѕС‚РІРѕСЂРµРЅСЊ
         float t = _splineContainer.Spline.ConvertIndexUnit(distance, PathIndexUnit.Distance, PathIndexUnit.Normalized);
 
         _splineContainer.Evaluate(t, out float3 localPos, out float3 localTangent, out float3 localUp);
@@ -50,7 +50,7 @@ public class TrackSegment : MonoBehaviour
         worldUp = transform.TransformDirection((Vector3)localUp).normalized;
     }
 
-    // Допоміжні методи для майбутніх стрілок/розвилок
+    // Р”РѕРїРѕРјС–Р¶РЅС– РјРµС‚РѕРґРё РґР»СЏ РјР°Р№Р±СѓС‚РЅС–С… СЃС‚СЂС–Р»РѕРє/СЂРѕР·РІРёР»РѕРє
     public virtual TrackSegment GetNextSegment() => nextSegment;
     public virtual TrackSegment GetPreviousSegment() => previousSegment;
 
