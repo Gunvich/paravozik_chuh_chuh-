@@ -256,9 +256,6 @@ public class TrainBuffer : MonoBehaviour
         int myIndex = comp.GetCarIndex(ownerCar);
         TrainCar carToDetach = null;
 
-        // Логіка:
-        // Якщо гравець взаємодіє з ПЕРЕДНІМ буфером вагона №3, значить ми відриваємо вагон №3 від вагона №2.
-        // Якщо гравець взаємодіє із ЗАДНІМ буфером вагона №2, значить ми ТАКОЖ відриваємо вагон №3 від вагона №2.
 
         if (position == BufferPosition.Front)
         {
