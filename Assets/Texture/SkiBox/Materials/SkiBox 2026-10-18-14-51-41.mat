@@ -84,7 +84,7 @@ Material:
     - _SunPitch: 90
     - _SunSize: 0.033
     - _SunYaw: 0
-    - _Times: 0
+    - _Times: 1.07
     m_Colors:
     - _GroundColor: {r: 0, g: 0, b: 0, a: 1}
     - _HorizonColor: {r: 0.4481132, g: 0.541934, b: 1, a: 1}
