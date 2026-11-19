@@ -55,7 +55,7 @@ public class MouseLook : MonoBehaviour
         }
     }
 
-    void LateUpdate()
+    void FixedUpdate()
     {
         if (profiles.Length == 0) return;
         if (!isRotation && targetToTrack == null && !isFocusingOnAngle) return;
@@ -85,10 +85,10 @@ public class MouseLook : MonoBehaviour
                 direction = playerBody.parent.InverseTransformDirection(direction);
             }
 
-            float targetY = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg;
-
-            float distanceXZ = Mathf.Sqrt(direction.x * direction.x + direction.z * direction.z);
-            float targetX = Mathf.Atan2(-direction.y, distanceXZ) * Mathf.Rad2Deg;
+            Quaternion targetRotation = Quaternion.LookRotation(direction);
+            Vector3 targetEuler = targetRotation.eulerAngles;
+            float targetX = NormalizeAngle(targetEuler.x);
+            float targetY = NormalizeAngle(targetEuler.y);
 
             xRotation = Mathf.Lerp(xRotation, targetX, focusSpeed * Time.deltaTime);
             yRotation = Mathf.LerpAngle(yRotation, targetY, focusSpeed * Time.deltaTime);

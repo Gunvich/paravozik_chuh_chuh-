@@ -30,8 +30,12 @@ namespace TerrainGenerator
             // 3. Створюємо чанк-заглушку (Terminal)
             ChunkObject terminalPrefab = CreateOrUpdateChunkPrefab("Chunk_Terminal_Rocks", 20f, 15f, isTerminal: true, "Default");
 
-            // 4. Створюємо генератор та обмежувач на поточній сцені
-            SetupSceneGenerator(straightPrefab, rectPrefab, terminalPrefab);
+            // 4. Створюємо компактний квадрат 10x10 для заповнення тріщин
+            ChunkObject fillerSquarePrefab = CreateOrUpdateChunkPrefab("Chunk_Filler_Square_10x10", 10f, 10f, isTerminal: false, "Default");
+            fillerSquarePrefab.isFillerChunk = true;
+
+            // 5. Створюємо генератор та обмежувач на поточній сцені
+            SetupSceneGenerator(straightPrefab, rectPrefab, terminalPrefab, fillerSquarePrefab);
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -39,7 +43,8 @@ namespace TerrainGenerator
             EditorUtility.DisplayDialog(
                 "Генератор готовий!",
                 "Тестові префаби створено у папці 'Assets/Prefabs/TerrainChunks'.\n" +
-                "На сцені створено об'єкт 'WorldGenerator' з прив'язаним обмежувачем 'SpawnAreaPolygon'.\n\n" +
+                "Створено: квадрат 20x20, прямокутник 30x20, скелі Terminal 20x15 та квадрат-заповнювач 10x10.\n" +
+                "На сцені налаштовано об'єкт 'WorldGenerator'.\n\n" +
                 "Ви можете виділити WorldGenerator в ієрархії та натиснути кнопку 'Згенерувати світ' в інспекторі!",
                 "Чудово");
         }
@@ -156,7 +161,7 @@ namespace TerrainGenerator
             return go;
         }
 
-        private static void SetupSceneGenerator(ChunkObject straight, ChunkObject rect, ChunkObject terminal)
+        private static void SetupSceneGenerator(ChunkObject straight, ChunkObject rect, ChunkObject terminal, ChunkObject fillerSquare)
         {
             WorldGenerator existingGen = Object.FindAnyObjectByType<WorldGenerator>();
             GameObject genGo = existingGen != null ? existingGen.gameObject : new GameObject("WorldGenerator");
@@ -188,9 +193,11 @@ namespace TerrainGenerator
             // Префаби
             gen.standardPrefabs = new List<ChunkObject> { straight, rect };
             gen.terminalPrefabs = new List<ChunkObject> { terminal };
-            gen.fillerPrefabs = new List<ChunkObject> { terminal };
+            gen.fillerPrefabs = new List<ChunkObject> { fillerSquare, terminal };
             gen.maxChunks = 35;
             gen.enableSliding = true;
+            gen.runSecondPassOnFinish = true;
+            gen.maxFillerPasses = 5;
 
             Selection.activeGameObject = genGo;
         }

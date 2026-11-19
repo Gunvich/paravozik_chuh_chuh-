@@ -13,6 +13,7 @@ public class ToggleSteps : MonoBehaviour
 
     private GameObject player;
     private MouseLook mouseLook;
+    private CharacterController characterController; // Додано посилання на CC
     private bool isMoving = false;
 
     public bool isDown = false;
@@ -24,6 +25,7 @@ public class ToggleSteps : MonoBehaviour
         if (player != null)
         {
             mouseLook = player.GetComponentInChildren<MouseLook>();
+            characterController = player.GetComponent<CharacterController>();
         }
     }
 
@@ -37,18 +39,18 @@ public class ToggleSteps : MonoBehaviour
 
     public void Teleport()
     {
-
         if (!isMoving && player != null && targetObject1 != null && targetObject2 != null)
         {
             if (isUp)
             {
-                StartCoroutine(MovePlayerAlongCurve(targetObject2.transform.position, targetObject1.transform.position)); 
+                // Передаємо Transform замість Vector3
+                StartCoroutine(MovePlayerAlongCurve(targetObject2.transform, targetObject1.transform));
                 isDown = true;
                 isUp = false;
             }
             else if (isDown)
             {
-                StartCoroutine(MovePlayerAlongCurve(targetObject1.transform.position, targetObject2.transform.position));
+                StartCoroutine(MovePlayerAlongCurve(targetObject1.transform, targetObject2.transform));
                 isUp = true;
                 isDown = false;
             }
@@ -58,21 +60,24 @@ public class ToggleSteps : MonoBehaviour
             {
                 mouseLook.TrackObject(targetLook.transform);
             }
-
         }
     }
 
-    private IEnumerator MovePlayerAlongCurve(Vector3 startPos, Vector3 endPos)
+    // Змінено параметри на Transform, щоб відстежувати рухомі цілі
+    private IEnumerator MovePlayerAlongCurve(Transform startTransform, Transform endTransform)
     {
         isMoving = true;
         float elapsedTime = 0f;
-        player.transform.position = startPos;
+
+        // 1. ВИМИКАЄМО CharacterController перед рухом
+        if (characterController != null)
+            characterController.enabled = false;
 
         try
         {
             while (elapsedTime < moveDuration)
             {
-                if (player == null)
+                if (player == null || startTransform == null || endTransform == null)
                 {
                     yield break;
                 }
@@ -80,19 +85,24 @@ public class ToggleSteps : MonoBehaviour
                 elapsedTime += Time.deltaTime;
                 float t = elapsedTime / moveDuration;
 
-                Vector3 linearPosition = Vector3.Lerp(startPos, endPos, t);
+                // 2. Динамічний Lerp. Зчитуємо position ЩОКАДРУ, щоб встигати за потягом
+                Vector3 linearPosition = Vector3.Lerp(startTransform.position, endTransform.position, t);
                 float heightOffset = Mathf.Sin(t * Mathf.PI) * curveHeight;
 
                 player.transform.position = linearPosition + new Vector3(0f, heightOffset, 0f);
 
                 yield return null;
-
             }
 
-            player.transform.position = endPos;
+            // Гарантуємо точне приземлення у фінальну точку
+            player.transform.position = endTransform.position;
         }
         finally
         {
+            // 3. ВМИКАЄМО CharacterController назад
+            if (characterController != null)
+                characterController.enabled = true;
+
             ForceStopTracking();
         }
     }
@@ -106,16 +116,18 @@ public class ToggleSteps : MonoBehaviour
         isMoving = false;
     }
 
-    public void InDown ()
+    public void InDown()
     {
         isDown = true;
         isUp = false;
     }
+
     public void InUp()
     {
         isDown = false;
         isUp = true;
     }
+
     public void InNull()
     {
         isDown = false;

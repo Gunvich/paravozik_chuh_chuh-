@@ -24,18 +24,16 @@ Material:
   m_Shader: {fileID: -6465566751694194690, guid: 554dfbff0c2ff8b4fbb1cdd73af6cf30, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
-  m_ValidKeywords:
+  m_ValidKeywords: []
+  m_InvalidKeywords:
   - _RECEIVE_SHADOWS_OFF
-  m_InvalidKeywords: []
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 1
   m_DoubleSidedGI: 1
   m_CustomRenderQueue: 2000
-  stringTagMap:
-    RenderType: Opaque
+  stringTagMap: {}
   disabledShaderPasses:
   - MOTIONVECTORS
-  - SHADOWCASTER
   m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
@@ -193,10 +191,10 @@ Material:
     - White: {r: 1, g: 1, b: 1, a: 1}
     - _BaseColor: {r: 0.3646026, g: 0.4433962, b: 0.34091312, a: 1}
     - _Color: {r: 0.2720103, g: 0.41509432, b: 0.22908507, a: 1}
-    - _Color1: {r: 0.65913135, g: 0.7771449, b: 0.8679245, a: 1}
-    - _Color11: {r: 0.35764506, g: 0.456695, b: 0.5377358, a: 1}
-    - _Color2: {r: 0.2735849, g: 0.2203768, b: 0.18712175, a: 1}
-    - _Color22: {r: 0.254717, g: 0.21939303, b: 0.19584373, a: 1}
+    - _Color1: {r: 0.36285156, g: 0.4526924, b: 0.509434, a: 1}
+    - _Color11: {r: 0.68551975, g: 0.72229713, b: 0.745283, a: 1}
+    - _Color2: {r: 0.0754717, g: 0.058642674, b: 0.052331794, a: 1}
+    - _Color22: {r: 0.16981131, g: 0.10194755, b: 0.07609469, a: 1}
     - _Color_1: {r: 0.18634544, g: 0.24528301, b: 0.07751868, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _HueVariation: {r: 1, g: 0.5, b: 0, a: 0.1}

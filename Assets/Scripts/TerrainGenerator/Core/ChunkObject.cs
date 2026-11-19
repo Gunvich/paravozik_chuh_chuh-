@@ -20,6 +20,13 @@ namespace TerrainGenerator
         [Tooltip("Список ребер чанка. Можна згенерувати автоматично з вершин Зони А")]
         public List<Edge> localEdges = new List<Edge>();
 
+        [Header("Запікання та Догенерація (Baking & In-filling)")]
+        [Tooltip("Чи є цей чанк запеченим / фіксованим (дорога, будинок, POI). Не видаляється при очищенні, бере участь у колізіях Зони А.")]
+        public bool isBaked = false;
+
+        [Tooltip("Чи дозволяти процедурному світу добудовуватися (рости) від відкритих ребер цього запеченого об'єкта.")]
+        public bool allowGrowthFromEdges = true;
+
         [Header("Властивості префаба")]
         [Tooltip("Чи є цей чанк заглушкою/краєм світу (наприклад, непрохідні скелі)")]
         public bool isTerminalChunk = false;
@@ -237,6 +244,120 @@ namespace TerrainGenerator
             RebuildEdgesFromPolygon(preserveTags: false);
         }
 
+        /// <summary>
+        /// Автоматично підганяє прямокутну Зону А під габарити (MeshFilter або Collider) об'єкта та його дочірніх мешів.
+        /// Зручно для швидкої розмітки будинків, доріг та довільних 3D-моделей.
+        /// </summary>
+        public void FitZoneToMeshBounds(float margin = 0.05f)
+        {
+            MeshFilter[] meshFilters = GetComponentsInChildren<MeshFilter>();
+            Collider[] colliders = GetComponentsInChildren<Collider>();
+
+            Bounds combinedLocalBounds = new Bounds();
+            bool hasBounds = false;
+
+            // Обчислюємо габарити у локальному просторі цього Transform
+            if (meshFilters != null && meshFilters.Length > 0)
+            {
+                for (int i = 0; i < meshFilters.Length; i++)
+                {
+                    MeshFilter mf = meshFilters[i];
+                    if (mf == null || mf.sharedMesh == null) continue;
+
+                    Mesh m = mf.sharedMesh;
+                    Transform childT = mf.transform;
+                    Bounds mb = m.bounds;
+
+                    Vector3 c = mb.center;
+                    Vector3 e = mb.extents;
+                    Vector3[] corners = new Vector3[8]
+                    {
+                        c + new Vector3(-e.x, -e.y, -e.z),
+                        c + new Vector3(-e.x, -e.y,  e.z),
+                        c + new Vector3(-e.x,  e.y, -e.z),
+                        c + new Vector3(-e.x,  e.y,  e.z),
+                        c + new Vector3( e.x, -e.y, -e.z),
+                        c + new Vector3( e.x, -e.y,  e.z),
+                        c + new Vector3( e.x,  e.y, -e.z),
+                        c + new Vector3( e.x,  e.y,  e.z)
+                    };
+
+                    for (int k = 0; k < 8; k++)
+                    {
+                        Vector3 worldPt = childT.TransformPoint(corners[k]);
+                        Vector3 localPt = transform.InverseTransformPoint(worldPt);
+                        if (!hasBounds)
+                        {
+                            combinedLocalBounds = new Bounds(localPt, Vector3.zero);
+                            hasBounds = true;
+                        }
+                        else
+                        {
+                            combinedLocalBounds.Encapsulate(localPt);
+                        }
+                    }
+                }
+            }
+            else if (colliders != null && colliders.Length > 0)
+            {
+                for (int i = 0; i < colliders.Length; i++)
+                {
+                    Collider col = colliders[i];
+                    if (col == null) continue;
+                    Bounds cb = col.bounds;
+                    Vector3 c = cb.center;
+                    Vector3 e = cb.extents;
+                    Vector3[] corners = new Vector3[8]
+                    {
+                        c + new Vector3(-e.x, -e.y, -e.z),
+                        c + new Vector3(-e.x, -e.y,  e.z),
+                        c + new Vector3(-e.x,  e.y, -e.z),
+                        c + new Vector3(-e.x,  e.y,  e.z),
+                        c + new Vector3( e.x, -e.y, -e.z),
+                        c + new Vector3( e.x, -e.y,  e.z),
+                        c + new Vector3( e.x,  e.y, -e.z),
+                        c + new Vector3( e.x,  e.y,  e.z)
+                    };
+
+                    for (int k = 0; k < 8; k++)
+                    {
+                        Vector3 localPt = transform.InverseTransformPoint(corners[k]);
+                        if (!hasBounds)
+                        {
+                            combinedLocalBounds = new Bounds(localPt, Vector3.zero);
+                            hasBounds = true;
+                        }
+                        else
+                        {
+                            combinedLocalBounds.Encapsulate(localPt);
+                        }
+                    }
+                }
+            }
+
+            if (!hasBounds)
+            {
+                Debug.LogWarning($"[ChunkObject] На об'єкті '{name}' не знайдено MeshFilter або Collider для розрахунку Зони А.");
+                return;
+            }
+
+            float minX = combinedLocalBounds.min.x - margin;
+            float maxX = combinedLocalBounds.max.x + margin;
+            float minZ = combinedLocalBounds.min.z - margin;
+            float maxZ = combinedLocalBounds.max.z + margin;
+
+            polygonVertices = new List<Vector3>
+            {
+                new Vector3(minX, 0f, minZ),
+                new Vector3(maxX, 0f, minZ),
+                new Vector3(maxX, 0f, maxZ),
+                new Vector3(minX, 0f, maxZ)
+            };
+
+            EnsureCCW();
+            RebuildEdgesFromPolygon(preserveTags: false);
+        }
+
         #endregion
 
         #region Gizmos Візуалізація
@@ -245,15 +366,17 @@ namespace TerrainGenerator
         {
             if (!drawGizmos || polygonVertices == null || polygonVertices.Count < 3) return;
 
-            // Малюємо контур Зони А
-            Gizmos.color = zoneAColor;
+            // Малюємо контур Зони А (Золотий колір для запечених об'єктів)
+            Color polyColor = isBaked ? new Color(1f, 0.72f, 0.15f, 0.95f) : zoneAColor;
+            Gizmos.color = polyColor;
+
             int count = polygonVertices.Count;
             for (int i = 0; i < count; i++)
             {
                 Vector3 w1 = transform.TransformPoint(polygonVertices[i]);
                 Vector3 w2 = transform.TransformPoint(polygonVertices[(i + 1) % count]);
                 Gizmos.DrawLine(w1, w2);
-                Gizmos.DrawSphere(w1, 0.2f);
+                Gizmos.DrawSphere(w1, isBaked ? 0.35f : 0.2f);
             }
 
             // Малюємо ребра та нормалі
@@ -274,22 +397,38 @@ namespace TerrainGenerator
                     {
                         Gizmos.color = connectedEdgeColor;
                     }
+                    else if (isBaked && !allowGrowthFromEdges)
+                    {
+                        // Запечений об'єкт як перешкода (не дає росту)
+                        Gizmos.color = new Color(0.6f, 0.6f, 0.6f, 0.5f);
+                    }
                     else if (edge.edgeTag == "Terminal")
                     {
                         Gizmos.color = new Color(0.9f, 0.2f, 0.8f, 1f); // Фіолетовий для Terminal
                     }
                     else
                     {
-                        Gizmos.color = openEdgeColor;
+                        Gizmos.color = isBaked ? new Color(1f, 0.85f, 0.2f, 1f) : openEdgeColor;
                     }
 
-                    // Потовщена лінія ребра
+                    // Лінія ребра
                     Gizmos.DrawLine(wStart, wEnd);
 
                     // Стрілка нормалі
                     if (drawNormals)
                     {
-                        Gizmos.color = edge.isConnected ? connectedEdgeColor : Color.yellow;
+                        if (edge.isConnected)
+                        {
+                            Gizmos.color = connectedEdgeColor;
+                        }
+                        else if (isBaked && !allowGrowthFromEdges)
+                        {
+                            Gizmos.color = new Color(0.6f, 0.6f, 0.6f, 0.3f);
+                        }
+                        else
+                        {
+                            Gizmos.color = isBaked ? new Color(1f, 0.85f, 0.2f, 1f) : Color.yellow;
+                        }
                         Gizmos.DrawRay(mid, wNormal * normalLength);
                     }
                 }

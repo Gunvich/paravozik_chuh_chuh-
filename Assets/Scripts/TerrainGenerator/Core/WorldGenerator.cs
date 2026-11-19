@@ -10,8 +10,9 @@ namespace TerrainGenerator
 {
     /// <summary>
     /// Головний менеджер генерації процедурного світу на основі полігональних чанків (Зона А + Зона Б).
-    /// Реалізує алгоритм кристалічного росту з ковзним стикуванням (Sliding Alignment),
-    /// перевірку перетинів (SAT/Polygon collision), підтримку меж SpawnAreaPolygon та заглушок.
+    /// Реалізує двоетапну генерацію:
+    /// 1-й прохід: Алгоритм кристалічного росту з ковзним стикуванням (Sliding Alignment) та перевіркою SAT.
+    /// 2-й прохід: Заповнення тріщин та щілин квадратами/заповнювачами без накладання (SAT перевірка) та без масштабування (1:1 scale).
     /// </summary>
     [ExecuteAlways]
     [SelectionBase]
@@ -24,8 +25,8 @@ namespace TerrainGenerator
         [Tooltip("Чи генерувати нове випадкове зерно при кожному запуску")]
         public bool useRandomSeed = false;
 
-        [Tooltip("Максимальна кількість чанків для генерації")]
-        [Range(1, 10000)]
+        [Tooltip("Максимальна кількість чанків для генерації 1-го проходу")]
+        [Range(1, 1000)]
         public int maxChunks = 40;
 
         [Tooltip("Максимальна кількість спроб знайти підходящий чанк для одного ребра")]
@@ -46,18 +47,16 @@ namespace TerrainGenerator
         [Tooltip("Чанки-заглушки (скелі, непрохідні межі з ребрами 'Terminal')")]
         public List<ChunkObject> terminalPrefabs = new List<ChunkObject>();
 
-        [Tooltip("Префаби-заповнювачі для 2-го проходу (заповнення тріщин та щілин)")]
+        [Tooltip("Префаби-заповнювачі для 2-го проходу (наприклад, квадрати 10x10, 5x5, які закривають тріщини)")]
         public List<ChunkObject> fillerPrefabs = new List<ChunkObject>();
 
         [Header("Другий прохід (Заповнення тріщин)")]
         [Tooltip("Чи запускати 2-й прохід заповнення тріщин автоматично після завершення основної генерації")]
         public bool runSecondPassOnFinish = true;
 
-        [Tooltip("Чи масштабувати префаби-заповнювачі під розмір квадратів сітки для строгого замкнення без щілин")]
-        public bool scaleFillersToCell = true;
-
-        [Tooltip("Максимальна дальність пошуку протилежної стінки тріщини")]
-        public float maxCrackSearchDepth = 40f;
+        [Tooltip("Максимальна кількість кроків/шарів заповнення тріщин квадратами у глибину")]
+        [Range(1, 10)]
+        public int maxFillerPasses = 5;
 
         [Header("Налаштування ковзання (Sliding)")]
         [Tooltip("Чи дозволяти чанкам ковзати вздовж ребер різної довжини")]
@@ -76,9 +75,9 @@ namespace TerrainGenerator
         public bool drawOpenEdgesGizmos = true;
 
         // Поточний стан генерації
-        [HideInInspector] public List<ChunkObject> spawnedChunks = new List<ChunkObject>();
-        [HideInInspector] public List<WorldEdge> activeOpenEdges = new List<WorldEdge>();
-        [HideInInspector] public List<WorldEdge> unplacedCrackEdges = new List<WorldEdge>();
+        [System.NonSerialized] public List<ChunkObject> spawnedChunks = new List<ChunkObject>();
+        [System.NonSerialized] public List<WorldEdge> activeOpenEdges = new List<WorldEdge>();
+        [System.NonSerialized] public List<WorldEdge> unplacedCrackEdges = new List<WorldEdge>();
 
         private System.Random rng;
 
@@ -93,11 +92,12 @@ namespace TerrainGenerator
         #region Публічні методи керування
 
         /// <summary>
-        /// Повністю генерує світ: ініціалізує початковий стан і виконує кроки росту до ліміту.
+        /// Повністю генерує світ: очищує процедурні чанки (зберігаючи запечені дороги/будинки),
+        /// виконує 1-й прохід росту навколо запечених об'єктів та 2-й прохід заповнення тріщин.
         /// </summary>
-        public void GenerateWorld()
+        public void GenerateWorld(bool keepBaked = true)
         {
-            InitializeWorld();
+            InitializeWorld(keepBaked: keepBaked);
 
             int step = 0;
             int maxTotalSteps = maxChunks * 5; // Захист від нескінченного циклу
@@ -113,7 +113,7 @@ namespace TerrainGenerator
                 }
             }
 
-            // 2-й прохід: Заповнення тріщин та щілин сіткою квадратів/комірок
+            // 2-й прохід: Заповнення тріщин та щілин квадратами/заповнювачами без масштабування
             if (runSecondPassOnFinish)
             {
                 RunSecondPass();
@@ -123,9 +123,63 @@ namespace TerrainGenerator
         }
 
         /// <summary>
-        /// Ініціалізує генератор: сканує сцену на наявність ручних чанків або створює стартовий чанк.
+        /// Догенерація світу (Incremental / In-fill):
+        /// Добудовує процедурний світ навколо існуючих та запечених чанків БЕЗ видалення вже згенерованого.
         /// </summary>
-        public void InitializeWorld()
+        public void GenerateIncremental()
+        {
+            if (chunksContainer == null)
+            {
+                chunksContainer = transform;
+            }
+
+            if (rng == null)
+            {
+                if (useRandomSeed) seed = UnityEngine.Random.Range(1000, 999999);
+                rng = new System.Random(seed);
+            }
+
+            // 1. Синхронізуємо список spawnedChunks з усіма чанками на сцені (запеченими та процедурними)
+            SyncSceneChunks();
+
+            // 2. Якщо відкритих ребер немає, збираємо всі незакриті ребра
+            if (activeOpenEdges.Count == 0)
+            {
+                CollectOpenEdgesFromSpawnedChunks();
+            }
+
+            // 3. Якщо і після цього немає ребер і світ абсолютно порожній - спавнимо стартовий
+            if (activeOpenEdges.Count == 0 && spawnedChunks.Count == 0)
+            {
+                SpawnStartingChunk();
+            }
+
+            int step = 0;
+            int maxTotalSteps = maxChunks * 5;
+
+            while (activeOpenEdges.Count > 0 && spawnedChunks.Count < maxChunks && step < maxTotalSteps)
+            {
+                step++;
+                bool success = GenerateStep();
+                if (!success && activeOpenEdges.Count == 0)
+                {
+                    break;
+                }
+            }
+
+            if (runSecondPassOnFinish)
+            {
+                RunSecondPass();
+            }
+
+            RunLeakTest();
+        }
+
+        /// <summary>
+        /// Ініціалізує генератор: очищує процедурні чанки, сканує сцену на запечені об'єкти (дороги, будинки),
+        /// відновлює їхні стики та підготовлює відкриті ребра до росту світу.
+        /// </summary>
+        public void InitializeWorld(bool keepBaked = true)
         {
             if (useRandomSeed)
             {
@@ -133,7 +187,7 @@ namespace TerrainGenerator
             }
             rng = new System.Random(seed);
 
-            ClearGeneratedWorld();
+            ClearGeneratedWorld(keepBaked: keepBaked);
 
             if (chunksContainer == null)
             {
@@ -144,20 +198,43 @@ namespace TerrainGenerator
             activeOpenEdges.Clear();
             unplacedCrackEdges.Clear();
 
-            // 1. Шукаємо вже розставлені вручну чанки (Гібридний режим)
-            ChunkObject[] existing = chunksContainer.GetComponentsInChildren<ChunkObject>();
-            if (existing != null && existing.Length > 0)
+            // 1. Знаходимо всі запечені об'єкти на сцені (в контейнері та за його межами)
+            List<ChunkObject> bakedChunks = FindAllBakedChunksInScene();
+            for (int i = 0; i < bakedChunks.Count; i++)
             {
-                for (int i = 0; i < existing.Length; i++)
+                if (!spawnedChunks.Contains(bakedChunks[i]))
                 {
-                    RegisterExistingChunk(existing[i]);
+                    spawnedChunks.Add(bakedChunks[i]);
                 }
-                if (logDebugInfo)
-                    Debug.Log($"[WorldGenerator] Знайдено {existing.Length} ручних чанків. Відкритих ребер: {activeOpenEdges.Count}");
             }
-            else
+
+            // 2. Відновлюємо стикування між запеченими об'єктами (щоб не проростати всередину запечених доріг)
+            ReconnectBakedChunks(bakedChunks);
+
+            // 3. Додаємо вільні ребра запечених об'єктів для догенерації (якщо allowGrowthFromEdges == true)
+            for (int i = 0; i < bakedChunks.Count; i++)
             {
-                // 2. Якщо сцена порожня, спавнимо стартовий чанк
+                ChunkObject chunk = bakedChunks[i];
+                if (chunk == null || !chunk.allowGrowthFromEdges || chunk.localEdges == null) continue;
+
+                for (int e = 0; e < chunk.localEdges.Count; e++)
+                {
+                    Edge edge = chunk.localEdges[e];
+                    if (edge != null && !edge.isConnected && edge.edgeTag != "Terminal")
+                    {
+                        activeOpenEdges.Add(new WorldEdge(chunk, e, edge));
+                    }
+                }
+            }
+
+            if (bakedChunks.Count > 0 && logDebugInfo)
+            {
+                Debug.Log($"[WorldGenerator] Знайдено {bakedChunks.Count} запечених чанків (доріг/будівель). Відкритих ребер для догенерації: {activeOpenEdges.Count}");
+            }
+
+            // 4. Якщо відкритих ребер немає (або немає запечених об'єктів), спавнимо стартовий чанк
+            if (activeOpenEdges.Count == 0)
+            {
                 SpawnStartingChunk();
             }
         }
@@ -179,7 +256,7 @@ namespace TerrainGenerator
                 return false;
             }
 
-            // Обираємо ребро зі списку відкритих (наприклад, випадкове або перше)
+            // Обираємо ребро зі списку відкритих
             int edgeIndex = rng.Next(0, activeOpenEdges.Count);
             WorldEdge currentEdge = activeOpenEdges[edgeIndex];
 
@@ -194,7 +271,7 @@ namespace TerrainGenerator
                 }
             }
 
-            // Формуємо список префабів: якщо близько до межі, шукаємо спочатку заглушки
+            // Формуємо список префабів
             List<ChunkObject> candidatePrefabs = new List<ChunkObject>();
             if (nearBoundary && terminalPrefabs != null && terminalPrefabs.Count > 0)
             {
@@ -235,9 +312,9 @@ namespace TerrainGenerator
         }
 
         /// <summary>
-        /// Очищає згенерований світ.
+        /// Очищає згенерований світ. Якщо keepBaked == true, запечені об'єкти (дороги, будинки) зберігаються.
         /// </summary>
-        public void ClearGeneratedWorld()
+        public void ClearGeneratedWorld(bool keepBaked = true)
         {
             if (chunksContainer != null)
             {
@@ -248,6 +325,10 @@ namespace TerrainGenerator
                     ChunkObject chunk = child.GetComponent<ChunkObject>();
                     if (chunk != null)
                     {
+                        if (keepBaked && chunk.isBaked)
+                        {
+                            continue; // Захищаємо запечений чанк!
+                        }
                         toDestroy.Add(child.gameObject);
                     }
                 }
@@ -269,9 +350,33 @@ namespace TerrainGenerator
                 }
             }
 
-            spawnedChunks.Clear();
+            if (keepBaked)
+            {
+                spawnedChunks.RemoveAll(c => c == null || !c.isBaked);
+            }
+            else
+            {
+                spawnedChunks.Clear();
+            }
+
             activeOpenEdges.Clear();
             unplacedCrackEdges.Clear();
+        }
+
+        /// <summary>
+        /// Очищає виключно процедурні чанки, залишаючи всі запечені дороги та будівлі недоторканими.
+        /// </summary>
+        public void ClearOnlyProceduralChunks()
+        {
+            ClearGeneratedWorld(keepBaked: true);
+        }
+
+        /// <summary>
+        /// Повне очищення світу: видаляє абсолютно всі чанки з контейнера (включно із запеченими).
+        /// </summary>
+        public void ClearAllChunks()
+        {
+            ClearGeneratedWorld(keepBaked: false);
         }
 
         /// <summary>
@@ -433,6 +538,9 @@ namespace TerrainGenerator
         /// </summary>
         private bool ValidatePlacement(ChunkObject prefab, Vector3 targetPos, Quaternion targetRot)
         {
+            if (prefab == null || prefab.polygonVertices == null || prefab.polygonVertices.Count < 3)
+                return false;
+
             // Трансформуємо вершини Зони А префаба у світовий простір без створення GameObject
             List<Vector2> candidatePoly2D = new List<Vector2>(prefab.polygonVertices.Count);
             List<Vector3> candidatePoly3D = new List<Vector3>(prefab.polygonVertices.Count);
@@ -453,7 +561,7 @@ namespace TerrainGenerator
                 }
             }
 
-            // 2. Перевірка колізії Зони А з уже розміщеними чанками
+            // 2. Перевірка колізії Зони А з уже розміщеними чанками (включно з уже розміщеними заповнювачами)
             for (int i = 0; i < spawnedChunks.Count; i++)
             {
                 ChunkObject existing = spawnedChunks[i];
@@ -469,12 +577,12 @@ namespace TerrainGenerator
             return true;
         }
 
-        private void SpawnChunkInstance(ChunkObject prefab, Vector3 pos, Quaternion rot, WorldEdge connectedWorldEdge, int connectedPrefabEdgeIndex)
+        private ChunkObject SpawnChunkInstance(ChunkObject prefab, Vector3 pos, Quaternion rot, WorldEdge connectedWorldEdge, int connectedPrefabEdgeIndex, bool addToActiveOpenEdges = true)
         {
             if (prefab == null || prefab.gameObject == null)
             {
                 Debug.LogError("[WorldGenerator] Спроба створити чанк із порожнього префаба (null)!");
-                return;
+                return null;
             }
 
             if (chunksContainer == null)
@@ -512,17 +620,18 @@ namespace TerrainGenerator
             if (go == null)
             {
                 Debug.LogError($"[WorldGenerator] Не вдалося створити екземпляр об'єкта {prefab.name}!");
-                return;
+                return null;
             }
 
             go.transform.position = pos;
             go.transform.rotation = rot;
+            go.transform.localScale = Vector3.one; // Строго 1:1, жодного масштабування/викривлення!
 
             ChunkObject chunkComp = go.GetComponent<ChunkObject>();
             if (chunkComp == null)
             {
                 Debug.LogError($"[WorldGenerator] На створеному об'єкті '{go.name}' відсутній компонент ChunkObject!");
-                return;
+                return null;
             }
 
             spawnedChunks.Add(chunkComp);
@@ -543,8 +652,11 @@ namespace TerrainGenerator
                 chunkComp.localEdges[connectedPrefabEdgeIndex].isConnected = true;
             }
 
-            // 2. Додаємо всі інші незакриті ребра нового чанка до activeOpenEdges
-            if (chunkComp.localEdges != null)
+            // Автоматично закриваємо дотичні ребра з сусідніми або запеченими чанками
+            CloseCoincidentOpenEdges(chunkComp);
+
+            // 2. Додаємо всі інші незакриті ребра нового чанка до activeOpenEdges (якщо дозволено)
+            if (addToActiveOpenEdges && chunkComp.localEdges != null)
             {
                 for (int i = 0; i < chunkComp.localEdges.Count; i++)
                 {
@@ -563,6 +675,45 @@ namespace TerrainGenerator
 
             if (logDebugInfo)
                 Debug.Log($"[WorldGenerator] Успішно створено чанк '{prefab.name}' на позиції {pos}. Залишилось відкритих ребер: {activeOpenEdges.Count}");
+
+            return chunkComp;
+        }
+
+        private void CloseCoincidentOpenEdges(ChunkObject newChunk)
+        {
+            if (newChunk == null || newChunk.localEdges == null) return;
+
+            for (int i = 0; i < newChunk.localEdges.Count; i++)
+            {
+                Edge localEdge = newChunk.localEdges[i];
+                if (localEdge == null || localEdge.isConnected) continue;
+
+                Vector3 wStart = newChunk.transform.TransformPoint(localEdge.startPoint);
+                Vector3 wEnd = newChunk.transform.TransformPoint(localEdge.endPoint);
+                Vector2 s1 = PolygonMath2D.To2D(wStart);
+                Vector2 e1 = PolygonMath2D.To2D(wEnd);
+
+                for (int k = activeOpenEdges.Count - 1; k >= 0; k--)
+                {
+                    WorldEdge openEdge = activeOpenEdges[k];
+                    if (openEdge == null || openEdge.chunk == newChunk) continue;
+
+                    Vector2 s2 = PolygonMath2D.To2D(openEdge.worldStart);
+                    Vector2 e2 = PolygonMath2D.To2D(openEdge.worldEnd);
+
+                    // У полігонах CCW протилежні дотичні ребра йдуть назустріч одне одному
+                    if (Vector2.Distance(s1, e2) < 0.15f && Vector2.Distance(e1, s2) < 0.15f)
+                    {
+                        localEdge.isConnected = true;
+                        if (openEdge.chunk != null && openEdge.localEdgeIndex >= 0 && openEdge.localEdgeIndex < openEdge.chunk.localEdges.Count)
+                        {
+                            openEdge.chunk.localEdges[openEdge.localEdgeIndex].isConnected = true;
+                        }
+                        activeOpenEdges.RemoveAt(k);
+                        break;
+                    }
+                }
+            }
         }
 
         private void SpawnStartingChunk()
@@ -607,13 +758,48 @@ namespace TerrainGenerator
 
             Quaternion spawnRot = Quaternion.identity;
 
+            // Якщо на початковій позиції вже є запечені об'єкти, шукаємо вільне місце поруч
+            if (spawnedChunks.Count > 0 && !ValidatePlacement(startingPrefab, spawnPos, spawnRot))
+            {
+                bool found = false;
+                for (float radius = 10f; radius <= 150f; radius += 10f)
+                {
+                    for (int angle = 0; angle < 360; angle += 45)
+                    {
+                        float rad = angle * Mathf.Deg2Rad;
+                        Vector3 testPos = spawnPos + new Vector3(Mathf.Cos(rad) * radius, 0f, Mathf.Sin(rad) * radius);
+                        if (ValidatePlacement(startingPrefab, testPos, spawnRot))
+                        {
+                            spawnPos = testPos;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (found) break;
+                }
+
+                if (!found)
+                {
+                    Debug.LogWarning("[WorldGenerator] Не вдалося знайти вільну позицію для стартового чанка навколо запечених частин.");
+                    return;
+                }
+            }
+
             SpawnChunkInstance(startingPrefab, spawnPos, spawnRot, null, -1);
         }
 
         private void RegisterExistingChunk(ChunkObject chunk)
         {
             if (chunk == null) return;
-            spawnedChunks.Add(chunk);
+            if (!spawnedChunks.Contains(chunk))
+            {
+                spawnedChunks.Add(chunk);
+            }
+
+            if (chunk.isBaked && !chunk.allowGrowthFromEdges)
+            {
+                return; // Не додаємо ребра до росту, якщо заборонено
+            }
 
             for (int i = 0; i < chunk.localEdges.Count; i++)
             {
@@ -624,6 +810,218 @@ namespace TerrainGenerator
                 }
             }
         }
+
+        /// <summary>
+        /// Пошук усіх запечених об'єктів (будинків, доріг тощо) на всій сцені.
+        /// </summary>
+        public List<ChunkObject> FindAllBakedChunksInScene()
+        {
+            List<ChunkObject> baked = new List<ChunkObject>();
+            ChunkObject[] all = FindObjectsByType<ChunkObject>(FindObjectsInactive.Exclude);
+            for (int i = 0; i < all.Length; i++)
+            {
+                ChunkObject c = all[i];
+                if (c != null && c.isBaked && c.gameObject.scene.IsValid())
+                {
+                    baked.Add(c);
+                }
+            }
+            return baked;
+        }
+
+        /// <summary>
+        /// Відновлює стикування між запеченими об'єктами:
+        /// Скидає старі тимчасові з'єднання та знаходить дійсні спільні ребра між запеченими частинами (наприклад, стики доріг).
+        /// </summary>
+        public void ReconnectBakedChunks(List<ChunkObject> bakedChunks)
+        {
+            if (bakedChunks == null || bakedChunks.Count == 0) return;
+
+            // 1. Скидаємо прапорці
+            for (int i = 0; i < bakedChunks.Count; i++)
+            {
+                ChunkObject chunk = bakedChunks[i];
+                if (chunk == null || chunk.localEdges == null) continue;
+                for (int e = 0; e < chunk.localEdges.Count; e++)
+                {
+                    if (chunk.localEdges[e] != null)
+                    {
+                        chunk.localEdges[e].isConnected = false;
+                    }
+                }
+            }
+
+            // 2. Знаходимо спільні ребра
+            for (int i = 0; i < bakedChunks.Count; i++)
+            {
+                ChunkObject chunkA = bakedChunks[i];
+                if (chunkA == null || chunkA.localEdges == null) continue;
+
+                for (int j = i + 1; j < bakedChunks.Count; j++)
+                {
+                    ChunkObject chunkB = bakedChunks[j];
+                    if (chunkB == null || chunkB.localEdges == null) continue;
+
+                    for (int ea = 0; ea < chunkA.localEdges.Count; ea++)
+                    {
+                        Edge edgeA = chunkA.localEdges[ea];
+                        if (edgeA == null || edgeA.isConnected) continue;
+
+                        Vector3 aStart = chunkA.transform.TransformPoint(edgeA.startPoint);
+                        Vector3 aEnd = chunkA.transform.TransformPoint(edgeA.endPoint);
+                        Vector2 aS = PolygonMath2D.To2D(aStart);
+                        Vector2 aE = PolygonMath2D.To2D(aEnd);
+
+                        for (int eb = 0; eb < chunkB.localEdges.Count; eb++)
+                        {
+                            Edge edgeB = chunkB.localEdges[eb];
+                            if (edgeB == null || edgeB.isConnected) continue;
+
+                            Vector3 bStart = chunkB.transform.TransformPoint(edgeB.startPoint);
+                            Vector3 bEnd = chunkB.transform.TransformPoint(edgeB.endPoint);
+                            Vector2 bS = PolygonMath2D.To2D(bStart);
+                            Vector2 bE = PolygonMath2D.To2D(bEnd);
+
+                            if (Vector2.Distance(aS, bE) < 0.15f && Vector2.Distance(aE, bS) < 0.15f)
+                            {
+                                edgeA.isConnected = true;
+                                edgeB.isConnected = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Синхронізує внутрішній список spawnedChunks з усіма ChunkObject, які наразі існують на сцені.
+        /// </summary>
+        public void SyncSceneChunks()
+        {
+            ChunkObject[] all = FindObjectsByType<ChunkObject>(FindObjectsInactive.Exclude);
+            for (int i = 0; i < all.Length; i++)
+            {
+                ChunkObject c = all[i];
+                if (c != null && c.gameObject.scene.IsValid() && !spawnedChunks.Contains(c))
+                {
+                    spawnedChunks.Add(c);
+                }
+            }
+            spawnedChunks.RemoveAll(c => c == null);
+        }
+
+        /// <summary>
+        /// Збирає всі незакриті відкриті ребра з існуючих чанків, які дозволяють ріст.
+        /// </summary>
+        public void CollectOpenEdgesFromSpawnedChunks()
+        {
+            activeOpenEdges.Clear();
+            for (int i = 0; i < spawnedChunks.Count; i++)
+            {
+                ChunkObject chunk = spawnedChunks[i];
+                if (chunk == null) continue;
+                if (chunk.isBaked && !chunk.allowGrowthFromEdges) continue;
+                if (chunk.localEdges == null) continue;
+
+                for (int e = 0; e < chunk.localEdges.Count; e++)
+                {
+                    Edge edge = chunk.localEdges[e];
+                    if (edge != null && !edge.isConnected && edge.edgeTag != "Terminal")
+                    {
+                        activeOpenEdges.Add(new WorldEdge(chunk, e, edge));
+                    }
+                }
+            }
+        }
+
+        #region Управління Запіканням (Baking API)
+
+        /// <summary>
+        /// Позначає всі чанки серед переданих об'єктів як запечені (isBaked = true).
+        /// </summary>
+        public void BakeObjects(GameObject[] objects)
+        {
+            if (objects == null || objects.Length == 0) return;
+            int count = 0;
+            for (int i = 0; i < objects.Length; i++)
+            {
+                if (objects[i] == null) continue;
+                ChunkObject[] chunks = objects[i].GetComponentsInChildren<ChunkObject>(true);
+                for (int c = 0; c < chunks.Length; c++)
+                {
+                    chunks[c].isBaked = true;
+#if UNITY_EDITOR
+                    UnityEditor.EditorUtility.SetDirty(chunks[c]);
+#endif
+                    count++;
+                }
+            }
+            Debug.Log($"[WorldGenerator] Запечено {count} чанків.");
+        }
+
+        /// <summary>
+        /// Знімає статус запікання з переданих об'єктів (isBaked = false).
+        /// </summary>
+        public void UnbakeObjects(GameObject[] objects)
+        {
+            if (objects == null || objects.Length == 0) return;
+            int count = 0;
+            for (int i = 0; i < objects.Length; i++)
+            {
+                if (objects[i] == null) continue;
+                ChunkObject[] chunks = objects[i].GetComponentsInChildren<ChunkObject>(true);
+                for (int c = 0; c < chunks.Length; c++)
+                {
+                    chunks[c].isBaked = false;
+#if UNITY_EDITOR
+                    UnityEditor.EditorUtility.SetDirty(chunks[c]);
+#endif
+                    count++;
+                }
+            }
+            Debug.Log($"[WorldGenerator] Розпечено {count} чанків.");
+        }
+
+        /// <summary>
+        /// Запікає абсолютно всі чанки, які зараз створені на сцені.
+        /// </summary>
+        public void BakeAllCurrentChunks()
+        {
+            SyncSceneChunks();
+            for (int i = 0; i < spawnedChunks.Count; i++)
+            {
+                if (spawnedChunks[i] != null)
+                {
+                    spawnedChunks[i].isBaked = true;
+#if UNITY_EDITOR
+                    UnityEditor.EditorUtility.SetDirty(spawnedChunks[i]);
+#endif
+                }
+            }
+            Debug.Log($"[WorldGenerator] Всі поточні чанки ({spawnedChunks.Count} шт.) успішно запечено.");
+        }
+
+        /// <summary>
+        /// Знімає статус запікання з усіх чанків у сцені.
+        /// </summary>
+        public void UnbakeAllChunks()
+        {
+            ChunkObject[] all = FindObjectsByType<ChunkObject>(FindObjectsInactive.Exclude);
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i] != null)
+                {
+                    all[i].isBaked = false;
+#if UNITY_EDITOR
+                    UnityEditor.EditorUtility.SetDirty(all[i]);
+#endif
+                }
+            }
+            Debug.Log($"[WorldGenerator] Знято запікання з усіх {all.Length} чанків у сцені.");
+        }
+
+        #endregion
 
         private bool IsTagCompatible(string tagA, string tagB)
         {
@@ -647,173 +1045,284 @@ namespace TerrainGenerator
 
         #endregion
 
-        #region Другий прохід: Заповнення тріщин (Second Pass: Crack Filling)
+        #region Другий прохід: Заповнення тріщин квадратами (Second Pass: Crack Filling)
 
         /// <summary>
-        /// Виконує другий прохід генерації: знаходить усі незаповнені тріщини та щілини між мешами
-        /// і заповнює їх сіткою квадратів/комірок префабів-заповнювачів для строгого замикання локації.
+        /// Виконує 2-й прохід генерації:
+        /// Бере префаби-заповнювачі (наприклад, квадрати 10x10, 5x5) і розставляє їх уздовж та вглиб тріщин,
+        /// закриваючи частинами площу тріщини.
+        /// Суворо дотримується:
+        /// 1. НІЯКИХ накладань 50 шт в одному місці (перевірка SAT ValidatePlacement для кожного заповнювача).
+        /// 2. НІЯКОГО масштабування (масштаб 1:1 scale).
         /// </summary>
         public int RunSecondPass()
         {
-            List<ChunkObject> pool = GetFillerPool();
-            if (pool == null || pool.Count == 0)
+            List<ChunkObject> fillers = GetFillerPool();
+            if (fillers == null || fillers.Count == 0)
             {
-                Debug.LogWarning("[WorldGenerator: 2-й прохід] Пули fillerPrefabs та terminalPrefabs порожні! Будь ласка, призначте префаби-заповнювачі.");
+                Debug.LogWarning("[WorldGenerator: 2-й прохід] Пули fillerPrefabs та terminalPrefabs порожні! Призначте префаби-заповнювачі.");
                 return 0;
             }
 
-            // Збираємо всі незакриті ребра (тріщини)
-            List<WorldEdge> allCracks = new List<WorldEdge>();
+            // Сортуємо префаби за розміром (від більших до менших), щоб спочатку закривати великі порожнечі, а потім дрібні
+            fillers.Sort((a, b) => b.GetFootprintSize().sqrMagnitude.CompareTo(a.GetFootprintSize().sqrMagnitude));
+
+            // Збираємо всі незакриті ребра тріщин
+            List<WorldEdge> crackQueue = new List<WorldEdge>();
             for (int i = 0; i < activeOpenEdges.Count; i++)
             {
                 if (activeOpenEdges[i] != null && !activeOpenEdges[i].isConnected)
                 {
-                    allCracks.Add(activeOpenEdges[i]);
+                    crackQueue.Add(activeOpenEdges[i]);
                 }
             }
             for (int i = 0; i < unplacedCrackEdges.Count; i++)
             {
                 if (unplacedCrackEdges[i] != null && !unplacedCrackEdges[i].isConnected)
                 {
-                    allCracks.Add(unplacedCrackEdges[i]);
+                    crackQueue.Add(unplacedCrackEdges[i]);
                 }
             }
 
-            if (allCracks.Count == 0)
+            if (crackQueue.Count == 0)
             {
                 if (logDebugInfo) Debug.Log("[WorldGenerator: 2-й прохід] Тріщин для заповнення не знайдено, світ вже замкнений.");
                 return 0;
             }
 
-            int filledCount = 0;
+            // 1. Попереднє зшивання зустрічних ребер, які вже впритул торкаються одне одного
+            StitchCloseEdges(crackQueue, maxDistance: 1.0f);
 
-            for (int i = 0; i < allCracks.Count; i++)
+            int totalFillersPlaced = 0;
+
+            // 2. Ітеративне нарощування заповнювачів шарами вглиб тріщин (до maxFillerPasses кроків)
+            for (int layer = 0; layer < maxFillerPasses; layer++)
             {
-                WorldEdge edge = allCracks[i];
-                if (edge == null || edge.isConnected) continue;
+                List<WorldEdge> nextLayerEdges = new List<WorldEdge>();
+                bool placedAnyInLayer = false;
 
-                // 1. Обираємо префаб-заповнювач
-                int pIdx = (rng != null) ? rng.Next(0, pool.Count) : UnityEngine.Random.Range(0, pool.Count);
-                ChunkObject fillerPrefab = pool[pIdx];
-                if (fillerPrefab == null) continue;
-
-                // 2. Визначаємо розміри комірки на основі компонента ChunkObject
-                Vector2 fillerSize = fillerPrefab.GetFootprintSize();
-                float fw = Mathf.Max(1f, fillerSize.x);
-                float fd = Mathf.Max(1f, fillerSize.y);
-
-                // 3. Знаходимо глибину тріщини попереду та зустрічне ребро
-                float crackDepth = CalculateCrackDepth(edge, maxCrackSearchDepth, out WorldEdge facingEdge);
-                if (crackDepth <= 0.05f || crackDepth >= maxCrackSearchDepth)
+                for (int i = 0; i < crackQueue.Count; i++)
                 {
-                    crackDepth = fd;
-                }
+                    WorldEdge edge = crackQueue[i];
+                    if (edge == null || edge.isConnected) continue;
 
-                // 4. Розбиваємо тріщину на площу з квадратів/комірок
-                int cols = Mathf.Max(1, Mathf.RoundToInt(edge.length / fw));
-                float cellW = edge.length / cols;
+                    bool edgeCovered = false;
 
-                int rows = Mathf.Max(1, Mathf.RoundToInt(crackDepth / fd));
-                float cellD = crackDepth / rows;
-
-                Quaternion baseRot = Quaternion.LookRotation(edge.worldNormal, Vector3.up);
-                Vector3 cellScale = scaleFillersToCell ? new Vector3(cellW / fw, 1f, cellD / fd) : Vector3.one;
-
-                // 5. Заповнюємо площу комірками, що прилягають ребро до ребра
-                for (int c = 0; c < cols; c++)
-                {
-                    float u = (c + 0.5f) * cellW;
-
-                    for (int r = 0; r < rows; r++)
+                    // Пробуємо доступні префаби-заповнювачі
+                    for (int p = 0; p < fillers.Count; p++)
                     {
-                        float v = (r + 0.5f) * cellD;
+                        ChunkObject prefab = fillers[p];
+                        if (prefab == null || prefab.localEdges == null || prefab.localEdges.Count == 0) continue;
 
-                        Vector3 spawnPos = edge.worldStart + (edge.Direction * u) + (edge.worldNormal * v);
+                        for (int eIdx = 0; eIdx < prefab.localEdges.Count; eIdx++)
+                        {
+                            Edge candEdge = prefab.localEdges[eIdx];
+                            if (candEdge == null || candEdge.length < 0.1f) continue;
 
-                        SpawnFillerInstance(fillerPrefab, spawnPos, baseRot, cellScale);
+                            // Розраховуємо кроки вздовж ребра для розміщення квадратів стик-у-стик
+                            List<float> offsets = GetTilingOffsets(edge.length, candEdge.length);
+
+                            for (int o = 0; o < offsets.Count; o++)
+                            {
+                                float offset = offsets[o];
+                                AlignChunk(edge, candEdge, offset, out Vector3 targetPos, out Quaternion targetRot);
+
+                                // СУВОРЕ ПРАВИЛО: Перевірка колізії SAT проти ВСІХ існуючих чанків і вже поставлених квадратів!
+                                // Якщо накладається — ніколи не ставиться!
+                                if (ValidatePlacement(prefab, targetPos, targetRot))
+                                {
+                                    // СУВОРЕ ПРАВИЛО: Масштаб строго 1:1, без розтягування/масштабування
+                                    ChunkObject newFiller = SpawnChunkInstance(prefab, targetPos, targetRot, null, -1, addToActiveOpenEdges: false);
+                                    if (newFiller != null)
+                                    {
+                                        newFiller.transform.localScale = Vector3.one;
+                                        placedAnyInLayer = true;
+                                        edgeCovered = true;
+                                        totalFillersPlaced++;
+
+                                        // Підключаємо ребро нового квадрата, яким він приєднався
+                                        for (int k = 0; k < newFiller.localEdges.Count; k++)
+                                        {
+                                            if (k == eIdx)
+                                            {
+                                                newFiller.localEdges[k].isConnected = true;
+                                            }
+                                            else if (!newFiller.localEdges[k].isConnected && newFiller.localEdges[k].edgeTag != "Terminal")
+                                            {
+                                                // Інші відкриті ребра квадрата йдуть у наступний шар для заповнення тріщини вглиб
+                                                nextLayerEdges.Add(new WorldEdge(newFiller, k, newFiller.localEdges[k]));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (edgeCovered) break;
+                        }
+
+                        if (edgeCovered) break;
+                    }
+
+                    if (edgeCovered)
+                    {
+                        MarkEdgeConnected(edge);
                     }
                 }
 
-                // 6. Позначаємо ребра як з'єднані (строго закриті)
-                if (edge.chunk != null && edge.localEdgeIndex >= 0 && edge.chunk.localEdges != null && edge.localEdgeIndex < edge.chunk.localEdges.Count)
-                {
-                    edge.chunk.localEdges[edge.localEdgeIndex].isConnected = true;
-                }
-                edge.isConnected = true;
+                // Зшиваємо краї, які зімкнулися між собою або торкнулися стінок тріщини
+                StitchCloseEdges(nextLayerEdges, maxDistance: 1.2f);
 
-                if (facingEdge != null)
+                // Оновлюємо чергу ребер на наступний шар
+                crackQueue.Clear();
+                for (int k = 0; k < nextLayerEdges.Count; k++)
                 {
-                    if (facingEdge.chunk != null && facingEdge.localEdgeIndex >= 0 && facingEdge.chunk.localEdges != null && facingEdge.localEdgeIndex < facingEdge.chunk.localEdges.Count)
+                    if (nextLayerEdges[k] != null && !nextLayerEdges[k].isConnected)
                     {
-                        facingEdge.chunk.localEdges[facingEdge.localEdgeIndex].isConnected = true;
+                        crackQueue.Add(nextLayerEdges[k]);
                     }
-                    facingEdge.isConnected = true;
                 }
 
-                filledCount++;
+                if (!placedAnyInLayer || crackQueue.Count == 0)
+                {
+                    break;
+                }
+            }
+
+            // 3. Фінальне зшивання та закриття швів
+            StitchCloseEdges(crackQueue, maxDistance: 1.5f);
+
+            // Закриваємо залишені дрібні щілини (менші за розмір квадрата), щоб не було витоків
+            for (int i = 0; i < crackQueue.Count; i++)
+            {
+                if (crackQueue[i] != null && !crackQueue[i].isConnected)
+                {
+                    MarkEdgeConnected(crackQueue[i]);
+                }
             }
 
             activeOpenEdges.Clear();
             unplacedCrackEdges.Clear();
 
-            if (logDebugInfo)
-            {
-                Debug.Log($"<color=cyan>[WorldGenerator: 2-й прохід]</color> Заповнено {filledCount} тріщин. Усі щілини замкнено.");
-            }
+            Debug.Log($"<color=cyan>[WorldGenerator: 2-й прохід]</color> Успішно розставлено {totalFillersPlaced} заповнювачів. Жодного накладання та масштабування. Тріщини замкнено!");
 
-            return filledCount;
+            return totalFillersPlaced;
         }
 
-        private float CalculateCrackDepth(WorldEdge edge, float maxDepth, out WorldEdge facingEdge)
+        /// <summary>
+        /// Генерує дискретні зміщення вздовж довжини ребра для розміщення заповнювачів стик-у-стик (як плитка).
+        /// </summary>
+        private List<float> GetTilingOffsets(float worldEdgeLen, float candLen)
         {
-            facingEdge = null;
-            float closestDist = maxDepth;
+            List<float> offsets = new List<float>();
+            if (candLen <= 0.001f) return offsets;
 
-            Vector2 origin2D = PolygonMath2D.To2D(edge.Midpoint);
-            Vector2 dir2D = PolygonMath2D.To2D(edge.worldNormal).normalized;
-
-            // Шукаємо перешкоди (інші чанки попереду)
-            for (int i = 0; i < spawnedChunks.Count; i++)
+            if (worldEdgeLen >= candLen)
             {
-                ChunkObject other = spawnedChunks[i];
-                if (other == null || other == edge.chunk) continue;
-
-                float hitDist = PolygonMath2D.RaycastToPolygon(origin2D, dir2D, other.GetWorldPolygon2D());
-                if (hitDist > 0.05f && hitDist < closestDist)
+                // Крокуємо вздовж ребра з кроком ширини квадрата
+                float u = 0f;
+                while (u + candLen <= worldEdgeLen + 0.01f)
                 {
-                    closestDist = hitDist;
+                    offsets.Add(u);
+                    u += candLen;
                 }
-            }
 
-            // Шукаємо перешкоди з межею SpawnAreaPolygon
-            if (spawnBounds != null)
-            {
-                float boundDist = spawnBounds.GetDistanceToBoundary(edge.Midpoint, edge.worldNormal);
-                if (boundDist > 0.05f && boundDist < closestDist)
+                // Якщо залишився хвостик, додаємо варіант з вирівнюванням по кінцю
+                if (worldEdgeLen - u > 0.5f)
                 {
-                    closestDist = boundDist;
-                }
-            }
-
-            // Шукаємо зустрічне ребро на іншому боці тріщини
-            Vector3 targetPoint = edge.Midpoint + edge.worldNormal * closestDist;
-            for (int i = 0; i < unplacedCrackEdges.Count; i++)
-            {
-                WorldEdge candidate = unplacedCrackEdges[i];
-                if (candidate == edge || candidate.isConnected) continue;
-
-                if (Vector3.Dot(edge.worldNormal, candidate.worldNormal) < -0.5f)
-                {
-                    float distToTarget = Vector3.Distance(candidate.Midpoint, targetPoint);
-                    if (distToTarget < edge.length + 1f)
+                    float endOffset = worldEdgeLen - candLen;
+                    if (!offsets.Contains(endOffset) && endOffset >= 0f)
                     {
-                        facingEdge = candidate;
+                        offsets.Add(endOffset);
+                    }
+                }
+            }
+            else
+            {
+                // Ребро коротше за квадрат: пробуємо по центру, на початку та в кінці
+                offsets.Add((worldEdgeLen - candLen) * 0.5f);
+                offsets.Add(0f);
+                offsets.Add(worldEdgeLen - candLen);
+            }
+
+            return offsets;
+        }
+
+        /// <summary>
+        /// Знаходить зустрічні ребра, що знаходяться близько одне до одного, та позначає їх як з'єднані.
+        /// </summary>
+        private void StitchCloseEdges(List<WorldEdge> edges, float maxDistance = 1.0f)
+        {
+            if (edges == null || edges.Count == 0) return;
+
+            // 1. Перевіряємо ребра всередині переданого списку
+            for (int i = 0; i < edges.Count; i++)
+            {
+                WorldEdge e1 = edges[i];
+                if (e1 == null || e1.isConnected) continue;
+
+                for (int j = i + 1; j < edges.Count; j++)
+                {
+                    WorldEdge e2 = edges[j];
+                    if (e2 == null || e2.isConnected) continue;
+                    if (e1.chunk == e2.chunk) continue;
+
+                    if (AreEdgesOpposingAndClose(e1, e2, maxDistance))
+                    {
+                        MarkEdgeConnected(e1);
+                        MarkEdgeConnected(e2);
                         break;
                     }
                 }
             }
 
-            return closestDist;
+            // 2. Перевіряємо ребра проти відкритих ребер усіх розміщених чанків на сцені
+            for (int i = 0; i < edges.Count; i++)
+            {
+                WorldEdge e1 = edges[i];
+                if (e1 == null || e1.isConnected) continue;
+
+                for (int c = 0; c < spawnedChunks.Count; c++)
+                {
+                    ChunkObject chunk = spawnedChunks[c];
+                    if (chunk == null || chunk == e1.chunk || chunk.localEdges == null) continue;
+
+                    for (int le = 0; le < chunk.localEdges.Count; le++)
+                    {
+                        Edge localEdge = chunk.localEdges[le];
+                        if (localEdge == null || localEdge.isConnected) continue;
+
+                        WorldEdge e2 = new WorldEdge(chunk, le, localEdge);
+                        if (AreEdgesOpposingAndClose(e1, e2, maxDistance))
+                        {
+                            MarkEdgeConnected(e1);
+                            localEdge.isConnected = true;
+                            break;
+                        }
+                    }
+
+                    if (e1.isConnected) break;
+                }
+            }
+        }
+
+        private bool AreEdgesOpposingAndClose(WorldEdge e1, WorldEdge e2, float maxDistance)
+        {
+            float dot = Vector3.Dot(e1.worldNormal, e2.worldNormal);
+            if (dot > -0.6f) return false;
+
+            float dist = Vector3.Distance(e1.Midpoint, e2.Midpoint);
+            float allowedDist = maxDistance + Mathf.Abs(e1.length - e2.length) * 0.5f;
+            return dist <= allowedDist;
+        }
+
+        private void MarkEdgeConnected(WorldEdge edge)
+        {
+            if (edge == null) return;
+            edge.isConnected = true;
+            if (edge.chunk != null && edge.localEdgeIndex >= 0 && edge.chunk.localEdges != null && edge.localEdgeIndex < edge.chunk.localEdges.Count)
+            {
+                edge.chunk.localEdges[edge.localEdgeIndex].isConnected = true;
+            }
         }
 
         private List<ChunkObject> GetFillerPool()
@@ -837,60 +1346,6 @@ namespace TerrainGenerator
             }
 
             return pool;
-        }
-
-        private ChunkObject SpawnFillerInstance(ChunkObject prefab, Vector3 pos, Quaternion rot, Vector3 scale)
-        {
-            if (prefab == null || prefab.gameObject == null) return null;
-            if (chunksContainer == null) chunksContainer = transform;
-
-            GameObject go = null;
-#if UNITY_EDITOR
-            if (!Application.isPlaying)
-            {
-                if (PrefabUtility.IsPartOfPrefabAsset(prefab.gameObject))
-                {
-                    go = (GameObject)PrefabUtility.InstantiatePrefab(prefab.gameObject, chunksContainer);
-                }
-
-                if (go == null)
-                {
-                    go = Instantiate(prefab.gameObject, chunksContainer);
-                }
-
-                if (go != null)
-                {
-                    Undo.RegisterCreatedObjectUndo(go, "Spawn Second Pass Filler");
-                }
-            }
-            else
-            {
-                go = Instantiate(prefab.gameObject, chunksContainer);
-            }
-#else
-            go = Instantiate(prefab.gameObject, chunksContainer);
-#endif
-
-            if (go == null) return null;
-
-            go.transform.position = pos;
-            go.transform.rotation = rot;
-            go.transform.localScale = scale;
-
-            ChunkObject chunkComp = go.GetComponent<ChunkObject>();
-            if (chunkComp != null)
-            {
-                if (chunkComp.localEdges != null)
-                {
-                    for (int i = 0; i < chunkComp.localEdges.Count; i++)
-                    {
-                        chunkComp.localEdges[i].isConnected = true;
-                    }
-                }
-                spawnedChunks.Add(chunkComp);
-            }
-
-            return chunkComp;
         }
 
         #endregion

@@ -150,8 +150,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7f7486fcd354717489931781c61aa956, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::MouseLook
-  mouseSensitivity: 15
+  profiles:
+  - sensitivity: 10
+    softZone: 45
+    minPitch: -85
+    maxPitch: 85
+    limitYaw: 0
+    minYaw: -180
+    maxYaw: 180
+  currentProfileIndex: 0
   playerBody: {fileID: 1098846886808073269}
+  targetToTrack: {fileID: 0}
+  focusSpeed: 8
+  allowMouseWhileTracking: 0
   isRotation: 1
 --- !u!1 &3383391703375685310
 GameObject:
@@ -324,3 +335,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TriggerLocalSpace
   localGridTag: LocalGrid
   detachDelay: 0.05
+  isClimbingOrInteracting: 0
+  OnGridChanged:
+    m_PersistentCalls:
+      m_Calls: []

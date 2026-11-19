@@ -15,11 +15,41 @@ namespace TerrainGenerator
 
         public override void OnInspectorGUI()
         {
+            if (chunk.isBaked)
+            {
+                EditorGUILayout.HelpBox("⭐ ЦЕЙ ЧАНК ЗАПЕЧЕНИЙ (Baked)!\nВін не видаляється при генерації/очищенні та враховується системою як фіксована частина світу.", MessageType.Warning);
+            }
+
             DrawDefaultInspector();
+
+            EditorGUILayout.Space(10);
+            EditorGUILayout.LabelField("Запікання та Фіксація", EditorStyles.boldLabel);
+
+            EditorGUILayout.BeginHorizontal();
+            GUI.backgroundColor = chunk.isBaked ? new Color(1f, 0.4f, 0.4f) : new Color(1f, 0.8f, 0.2f);
+            if (GUILayout.Button(chunk.isBaked ? "Розпекти чанк (Unbake)" : "Запекти чанк (Bake)", GUILayout.Height(28)))
+            {
+                Undo.RecordObject(chunk, "Toggle Bake Chunk");
+                chunk.isBaked = !chunk.isBaked;
+                EditorUtility.SetDirty(chunk);
+            }
+            GUI.backgroundColor = Color.white;
+            EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.Space(10);
             EditorGUILayout.LabelField("Утиліти Зони А", EditorStyles.boldLabel);
 
+            // Кнопка автоматичної підгонки під Mesh/Bounds
+            GUI.backgroundColor = new Color(0.3f, 0.8f, 1f);
+            if (GUILayout.Button("Підігнати Зону А під Mesh / Bounds", GUILayout.Height(30)))
+            {
+                Undo.RecordObject(chunk, "Fit Zone A to Bounds");
+                chunk.FitZoneToMeshBounds(margin: 0.1f);
+                EditorUtility.SetDirty(chunk);
+            }
+            GUI.backgroundColor = Color.white;
+
+            EditorGUILayout.Space(5);
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("Перебудувати ребра"))
             {
@@ -56,9 +86,9 @@ namespace TerrainGenerator
 
             EditorGUILayout.HelpBox(
                 "Підказки:\n" +
-                "• Зона А визначає строгу логічну площу чанка, яка не повинна перетинатися з іншими.\n" +
-                "• Вершини можна перетягувати маркерами прямо у Scene View.\n" +
-                "• Ребра з тегом 'Terminal' не генерують нових шляхів росту і зупиняють генерацію.",
+                "• 'Підігнати Зону А під Mesh / Bounds' миттєво створює контур навколо вашої будівлі чи дороги.\n" +
+                "• Запечені об'єкти (isBaked = true) не видаляються при перезапуску генератора.\n" +
+                "• 'allowGrowthFromEdges' визначає, чи будуть нові чанки пристиковуватися до країв цього об'єкта (дороги/двері), чи він діє лише як перешкода (будинок).",
                 MessageType.Info);
         }
 
