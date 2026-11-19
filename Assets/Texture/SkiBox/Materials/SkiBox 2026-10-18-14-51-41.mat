@@ -1,0 +1,136 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: SkiBox 2026-10-18-14-51-41
+  m_Shader: {fileID: -6465566751694194690, guid: 9566c928ec891454ca7b308f1e41ec38, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses:
+  - MOTIONVECTORS
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _SampleReflectedCubemap_28d6f707c65047fcb61c71f80eea9457_Cube_1_Cubemap:
+        m_Texture: {fileID: 8900000, guid: 9d60edf9afde543479749a2dff546172, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SampleReflectedCubemap_3e325e2055ca4e5c87451072768cb3e0_Cube_1_Cubemap:
+        m_Texture: {fileID: 8900000, guid: 970207490be0c2a489e8f75ecb6bb632, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SampleReflectedCubemap_4dde75a7c1e84c758962beb9fa94f0d7_Cube_1_Cubemap:
+        m_Texture: {fileID: 8900000, guid: d5812a79722f86244abb766c4fb0a8f9, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SampleReflectedCubemap_63d187491bf342b39a40ab1b13f2b8e1_Cube_1_Cubemap:
+        m_Texture: {fileID: 8900000, guid: 89c17626647dc04459064e8839b43640, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SampleReflectedCubemap_7fa94707261a4b0fa50c2d36bd919fae_Cube_1_Cubemap:
+        m_Texture: {fileID: 8900000, guid: f1208ed4eadac654697af79a8eb93662, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SampleReflectedCubemap_aede2f3892d541429c3faee273004d38_Cube_1_Cubemap:
+        m_Texture: {fileID: 8900000, guid: 2658819702e22fb4d9a97e504ed9338d, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SampleTexture2D_f20a866cb9f045d2a27bee8210d28325_Texture_1_Texture2D:
+        m_Texture: {fileID: 2800000, guid: 7379e9ea63ada554a974349f2338b5d1, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SampleTexture2D_f606c6a8671c46ce8d2820bec682504f_Texture_1_Texture2D:
+        m_Texture: {fileID: 2800000, guid: c7b0224664c72c141815ec7bf2414f83, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Tex:
+        m_Texture: {fileID: 8900000, guid: 970207490be0c2a489e8f75ecb6bb632, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - unity_Lightmaps:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - unity_LightmapsInd:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - unity_ShadowMasks:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _Bulge: 0
+    - _DeformStrength: 1
+    - _EquatorSharpness: 2.4
+    - _EquatorTriggerHeight: 8
+    - _Exposure: 1
+    - _GroundBlend: 0.3
+    - _HaloIntensity: 0.17
+    - _HaloPower: 19.63
+    - _HorizonSharpness: 0.63
+    - _HorizonSpread: 5
+    - _MidSkyHeight: 0.24
+    - _MoonHaloIntensity: 1
+    - _MoonHaloPower: 55.1
+    - _MoonSize: 0.1
+    - _ProximitySens: 0
+    - _QueueControl: 0
+    - _QueueOffset: 0
+    - _Rotation: 0
+    - _Seasons: 0
+    - _Size: 0.22
+    - _StretchIntensity: 1.5
+    - _StretchPower: 15
+    - _StretchWidth: 0
+    - _SunBlur: 0.397
+    - _SunGlowSpread: 0
+    - _SunHaloIntensity: 0.51
+    - _SunHaloPower: 209.6
+    - _SunPitch: 90
+    - _SunScatterStrength: 0
+    - _SunSize: 0.17
+    - _SunYaw: 0
+    - _Times: 1.01
+    m_Colors:
+    - _GroundColor: {r: 0, g: 0, b: 0, a: 1}
+    - _HaloColor: {r: 0.97735846, g: 0.7572991, b: 0.6472694, a: 1}
+    - _HorizonColor: {r: 0.4725881, g: 0.49700516, b: 0.6679245, a: 1}
+    - _MidSkyColor: {r: 0.40754002, g: 0.5335284, b: 0.83396226, a: 1}
+    - _MoonColor: {r: 1, g: 1, b: 1, a: 1}
+    - _MoonHaloColor: {r: 0.2212531, g: 0.32308286, b: 0.4264151, a: 1}
+    - _SunColor: {r: 1, g: 1, b: 1, a: 1}
+    - _SunDirection: {r: 0, g: 0, b: 1, a: 0}
+    - _SunHaloColor: {r: 0.7056604, g: 0.6368813, b: 0.50461376, a: 1}
+    - _SunHorizonTint: {r: 0.7283019, g: 0.23991121, b: 0, a: 1}
+    - _Tint: {r: 0.5, g: 0.5, b: 0.5, a: 0.5}
+    - _ZenithColor: {r: 0.2932929, g: 0.41914678, b: 0.7509433, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1
+--- !u!114 &8053026195812814667
+MonoBehaviour:
+  m_ObjectHideFlags: 11
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d0353a89b1f911e48b9e16bdc9f2e058, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Editor::UnityEditor.Rendering.Universal.AssetVersion
+  version: 10

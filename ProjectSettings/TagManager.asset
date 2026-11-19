@@ -6,6 +6,7 @@ TagManager:
   tags:
   - LocalGrid
   - TerrainChunk
+  - Snow
   layers:
   - Default
   - TransparentFX
